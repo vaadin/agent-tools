@@ -1,0 +1,32 @@
+{
+  "name": "@vaadin/agent-tools",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A collection of Vaadin tools that AI agents (and humans) can run via npx to inspect and validate Vaadin projects.",
+  "keywords": [
+    "Vaadin",
+    "cli",
+    "agent",
+    "tools",
+    "lint",
+    "theme",
+    "aura",
+    "lumo"
+  ],
+  "bin": {
+    "vaadin-agent-tools": "src/cli.js"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.3.0"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "author": "Vaadin",
+  "license": "Apache-2.0"
+}
