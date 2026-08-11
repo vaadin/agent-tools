@@ -19,6 +19,7 @@ Detection signals:
   - @StyleSheet(Aura.STYLESHEET) / @StyleSheet(Lumo.STYLESHEET) in Java sources
   - @import of aura/aura.css or lumo/lumo.css in reusable-theme stylesheets
   - Usage of --aura-* vs --lumo-* CSS custom properties
+  - Usage of the LumoUtility class in Java (only works under the Lumo theme)
 
 Exit codes:
   0  no error-level findings
@@ -32,6 +33,9 @@ const JAVA_STYLESHEET_RE =
   /@StyleSheet\s*\(\s*(?:[\w.]*\.)?(Aura|Lumo)\.STYLESHEET/g;
 // Legacy Flow theming mechanism (Vaadin 24 and earlier)
 const JAVA_LEGACY_THEME_RE = /@Theme\s*\(/g;
+// LumoUtility emits Lumo-specific utility CSS class names (e.g.
+// LumoUtility.Margin.MEDIUM) that the Aura theme does not define.
+const JAVA_LUMO_UTILITY_RE = /\bLumoUtility\b/g;
 
 // @import '.../aura/aura.css' or "lumo/lumo.css"
 const CSS_IMPORT_RE =
@@ -70,6 +74,7 @@ export function run({ positionals, cwd }) {
   const loaded = { aura: [], lumo: [] };
   const tokens = { aura: [], lumo: [] };
   const legacyTheme = [];
+  const lumoUtility = [];
 
   const rel = (f) => path.relative(target, f);
 
@@ -92,6 +97,14 @@ export function run({ positionals, cwd }) {
       for (const m of content.matchAll(JAVA_LEGACY_THEME_RE)) {
         legacyTheme.push(
           evidence(rel(file), lineOf(content, m.index), snippetAt(content, m.index))
+        );
+      }
+      // Report at most one LumoUtility hit per file to keep evidence tidy.
+      const utility = JAVA_LUMO_UTILITY_RE.exec(content);
+      JAVA_LUMO_UTILITY_RE.lastIndex = 0;
+      if (utility) {
+        lumoUtility.push(
+          evidence(rel(file), lineOf(content, utility.index), snippetAt(content, utility.index))
         );
       }
     } else if (ext === ".css") {
@@ -164,6 +177,24 @@ export function run({ positionals, cwd }) {
         "Both --aura-* and --lumo-* CSS custom properties are used, but no base theme " +
           "is explicitly loaded via @StyleSheet. Verify the intended theme.",
         { confidence: "low", evidence: [...tokens.aura, ...tokens.lumo] }
+      )
+    );
+  }
+
+  // LumoUtility only works under Lumo. Flag it when Aura is (or is likely) the
+  // active theme.
+  if (lumoUtility.length > 0 && !themesLoaded.includes("lumo")) {
+    const auraLoaded = themesLoaded.includes("aura");
+    findings.push(
+      finding(
+        "error",
+        "LUMO_UTILITY_WITHOUT_LUMO_THEME",
+        auraLoaded
+          ? "LumoUtility is used while the Aura theme is loaded. LumoUtility emits " +
+              "Lumo-specific CSS utility classes that Aura does not define."
+          : "LumoUtility is used but the Lumo theme is not loaded. Its utility " +
+              "classes only work under Lumo (Aura is the default theme in Vaadin 25).",
+        { confidence: auraLoaded ? "high" : "medium", evidence: lumoUtility }
       )
     );
   }

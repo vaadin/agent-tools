@@ -36,6 +36,8 @@ Detection signals:
 - `@StyleSheet(Aura.STYLESHEET)` / `@StyleSheet(Lumo.STYLESHEET)` in Java sources
 - `@import` of `aura/aura.css` or `lumo/lumo.css` in reusable-theme stylesheets
 - Usage of `--aura-*` vs `--lumo-*` CSS custom properties
+- Usage of the `LumoUtility` class in Java, whose utility CSS classes only
+  work under the Lumo theme (not Aura)
 
 Exit codes: `0` no error-level findings · `1` mixing detected · `2` usage error.
 

@@ -31,6 +31,25 @@ test("warns on mismatched theme tokens without failing the build", () => {
   assert.equal(warn.level, "warning");
 });
 
+test("flags LumoUtility usage while the Aura theme is loaded", () => {
+  const result = run({ positionals: ["lumo-utility"], cwd: fixtures });
+  assert.equal(result.ok, false);
+  const error = result.findings.find(
+    (f) => f.code === "LUMO_UTILITY_WITHOUT_LUMO_THEME"
+  );
+  assert.ok(error, "expected LUMO_UTILITY_WITHOUT_LUMO_THEME finding");
+  assert.equal(error.level, "error");
+  assert.equal(error.confidence, "high");
+});
+
+test("does not flag LumoUtility when the Lumo theme is loaded", () => {
+  const result = run({ positionals: ["lumo-utility-ok"], cwd: fixtures });
+  const error = result.findings.find(
+    (f) => f.code === "LUMO_UTILITY_WITHOUT_LUMO_THEME"
+  );
+  assert.equal(error, undefined, "LumoUtility is valid under the Lumo theme");
+});
+
 test("reports a usage error for a missing directory", () => {
   const result = run({ positionals: ["does-not-exist"], cwd: fixtures });
   assert.ok(result.usageError);
