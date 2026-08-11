@@ -46,6 +46,21 @@ recommended distribution for agents (including those in offline sandboxes),
 independent of whether the package has been published to npmjs.com. Publishing
 and `npx` remain a convenience for humans on machines that already have Node.
 
+#### Vendoring into a skill or plugin
+
+The package has **no runtime dependencies**, so the whole tool is just `bin/`
+and `src/` — there is no `node_modules` to copy. To embed it in an agent skill
+or plugin, copy those two directories (preserving the layout, since the launcher
+resolves `bin/../src/cli.js`) and instruct the agent to run:
+
+```sh
+<skill-dir>/bin/vaadin-agent-tools <tool> [args] --json
+```
+
+No `npm install`, no global Node, and no network at runtime — the launcher finds
+a Node runtime (Vaadin's `~/.vaadin/node` if nothing else) on its own. Pin the
+copied version to a commit/tag so the bundled tool is reproducible.
+
 ## Tools
 
 ### `check-theme-mixing`
