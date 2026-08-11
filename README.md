@@ -1,23 +1,50 @@
 # @vaadin/agent-tools
 
-A collection of Vaadin tools that AI agents (and humans) can run directly with
-`npx` to inspect and validate Vaadin projects — no installation required.
+A collection of Vaadin tools that AI agents (and humans) can run to inspect and
+validate Vaadin projects.
 
 ## Usage
 
+If you have a global Node.js install, run it with `npx`:
+
 ```sh
 npx @vaadin/agent-tools <tool> [args] [--json]
-```
-
-List the available tools:
-
-```sh
 npx @vaadin/agent-tools list
 ```
+
+But a Vaadin machine is **not guaranteed to have `node`/`npm` on `PATH`** — the
+only runtime you can count on is the JVM, and Node, if present at all, is the
+copy Vaadin's frontend toolchain downloads under `~/.vaadin/node`. For that case
+the package ships launchers in [`bin/`](bin) that locate a runtime themselves:
+
+```sh
+# from a checkout or a vendored copy — no global node required
+bin/vaadin-agent-tools <tool> [args] [--json]     # macOS / Linux
+bin\vaadin-agent-tools.bat <tool> [args] [--json] # Windows
+```
+
+The launcher resolves `node` in this order, then execs the bundled CLI:
+
+1. `$VAADIN_AGENT_TOOLS_NODE` — explicit override
+2. `node` on `PATH`
+3. Node downloaded by Vaadin — `~/.vaadin/node`
+4. Project-local `node/`
+
+If none is found it exits `3` with instructions (install Node, or run a Vaadin
+frontend build once so Vaadin downloads it).
 
 Every tool supports `--json` for machine-readable output (recommended for
 agents) and exits non-zero when it finds a problem, so it slots into CI and
 agent workflows.
+
+### Making it available to agents
+
+Because the launcher needs no global `node` and no network at invocation time,
+the tools work **vendored on disk** — checked out or bundled into an agent /
+plugin at a known path and run via `bin/vaadin-agent-tools`. This is the
+recommended distribution for agents (including those in offline sandboxes),
+independent of whether the package has been published to npmjs.com. Publishing
+and `npx` remain a convenience for humans on machines that already have Node.
 
 ## Tools
 
@@ -46,6 +73,23 @@ and exits `0` rather than guessing. Ensuring correctness there is outside the
 tool's scope.
 
 Exit codes: `0` no error-level findings · `1` mixing detected · `2` usage error.
+
+## CLI contract
+
+The command-line surface is the stable interface — treat it as the contract, not
+the JavaScript implementation behind it:
+
+- **Invocation:** `<launcher> <tool> [args] [--json] [-h|--help] [-v|--version]`
+- **JSON output** (`--json`): `{ "tool", "ok", ...result }`, or
+  `{ "tool", "ok": false, "usageError" }` for a usage error.
+- **Exit codes:** `0` no error-level findings · `1` findings/error · `2` usage
+  error · `3` no Node.js runtime could be located (launcher only).
+
+The implementation is JavaScript today. It is intentionally reachable only
+through this contract (the launcher name, args, JSON shape, and exit codes) so a
+future **JVM reimplementation** — the always-present runtime on a Vaadin machine
+— can drop in behind the same `vaadin-agent-tools` command without changing how
+agents or CI call it.
 
 ## Adding a tool
 

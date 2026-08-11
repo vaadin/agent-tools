@@ -17,6 +17,7 @@
     "vaadin-agent-tools": "src/cli.js"
   },
   "files": [
+    "bin",
     "src",
     "README.md",
     "LICENSE"
