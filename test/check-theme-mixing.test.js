@@ -50,6 +50,17 @@ test("does not flag LumoUtility when the Lumo theme is loaded", () => {
   assert.equal(error, undefined, "LumoUtility is valid under the Lumo theme");
 });
 
+test("is a no-op when the active theme cannot be determined", () => {
+  const result = run({ positionals: ["indeterminate"], cwd: fixtures });
+  assert.equal(result.ok, true); // no error — correctness is out of scope here
+  assert.equal(result.themesLoaded.length, 0);
+  const skipped = result.findings.find((f) => f.code === "THEME_INDETERMINATE");
+  assert.ok(skipped, "expected THEME_INDETERMINATE info finding");
+  assert.equal(skipped.level, "info");
+  // No error/warning findings should be produced when the theme is unknown.
+  assert.ok(!result.findings.some((f) => f.level === "error" || f.level === "warning"));
+});
+
 test("reports a usage error for a missing directory", () => {
   const result = run({ positionals: ["does-not-exist"], cwd: fixtures });
   assert.ok(result.usageError);

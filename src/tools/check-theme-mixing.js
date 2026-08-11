@@ -151,10 +151,15 @@ export function run({ positionals, cwd }) {
     );
   }
 
-  // 2. Medium-confidence: tokens from a theme that is not the loaded one.
+  // The checks below depend on knowing which base theme is active. We only know
+  // that when exactly one base theme is explicitly loaded. If none is loaded the
+  // project may use a custom or base-styles theme, and ensuring correctness is
+  // outside this tool's scope — so it is a no-op rather than a guess.
   if (themesLoaded.length === 1) {
     const [active] = themesLoaded;
     const other = active === "aura" ? "lumo" : "aura";
+
+    // Tokens from a theme other than the active one will not resolve.
     if (tokens[other].length > 0) {
       findings.push(
         finding(
@@ -166,35 +171,32 @@ export function run({ positionals, cwd }) {
         )
       );
     }
-  }
 
-  // 3. Low-confidence: tokens from both themes but no base theme explicitly loaded.
-  if (themesLoaded.length === 0 && tokenPrefixesUsed.length > 1) {
+    // LumoUtility emits Lumo-specific CSS utility classes that Aura lacks.
+    if (active === "aura" && lumoUtility.length > 0) {
+      findings.push(
+        finding(
+          "error",
+          "LUMO_UTILITY_WITHOUT_LUMO_THEME",
+          "LumoUtility is used while the Aura theme is loaded. LumoUtility emits " +
+            "Lumo-specific CSS utility classes that Aura does not define.",
+          { confidence: "high", evidence: lumoUtility }
+        )
+      );
+    }
+  } else if (themesLoaded.length === 0 && (lumoUtility.length > 0 || tokenPrefixesUsed.length > 0)) {
+    // Theme-dependent usage exists but no base theme is explicitly loaded, so we
+    // cannot confidently say whether Aura, Lumo, or a custom theme is active.
+    // Surface this as info (no error) so it is clear the checks were skipped, not
+    // that everything passed.
     findings.push(
       finding(
-        "warning",
-        "MIXED_TOKENS_NO_BASE_THEME",
-        "Both --aura-* and --lumo-* CSS custom properties are used, but no base theme " +
-          "is explicitly loaded via @StyleSheet. Verify the intended theme.",
-        { confidence: "low", evidence: [...tokens.aura, ...tokens.lumo] }
-      )
-    );
-  }
-
-  // LumoUtility only works under Lumo. Flag it when Aura is (or is likely) the
-  // active theme.
-  if (lumoUtility.length > 0 && !themesLoaded.includes("lumo")) {
-    const auraLoaded = themesLoaded.includes("aura");
-    findings.push(
-      finding(
-        "error",
-        "LUMO_UTILITY_WITHOUT_LUMO_THEME",
-        auraLoaded
-          ? "LumoUtility is used while the Aura theme is loaded. LumoUtility emits " +
-              "Lumo-specific CSS utility classes that Aura does not define."
-          : "LumoUtility is used but the Lumo theme is not loaded. Its utility " +
-              "classes only work under Lumo (Aura is the default theme in Vaadin 25).",
-        { confidence: auraLoaded ? "high" : "medium", evidence: lumoUtility }
+        "info",
+        "THEME_INDETERMINATE",
+        "No base theme is explicitly loaded via @StyleSheet or a theme @import, so " +
+          "the active theme could not be determined (it may be a custom theme). " +
+          "Theme-dependent checks were skipped.",
+        { confidence: "low", evidence: [...lumoUtility, ...tokens.aura, ...tokens.lumo] }
       )
     );
   }

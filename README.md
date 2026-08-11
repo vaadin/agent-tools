@@ -39,6 +39,12 @@ Detection signals:
 - Usage of the `LumoUtility` class in Java, whose utility CSS classes only
   work under the Lumo theme (not Aura)
 
+If no base theme is explicitly loaded, the active theme cannot be determined
+(it may be a custom or base-styles theme). In that case the theme-dependent
+checks are a **no-op** — the tool reports a `THEME_INDETERMINATE` info finding
+and exits `0` rather than guessing. Ensuring correctness there is outside the
+tool's scope.
+
 Exit codes: `0` no error-level findings · `1` mixing detected · `2` usage error.
 
 ## Adding a tool
