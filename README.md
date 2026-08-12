@@ -38,6 +38,8 @@ the Go sources, and the shared test fixtures alongside each other:
 ├── skills/                 # one SKILL.md per tool (the agent surface)
 │   ├── vaadin-check-theme-mixing/SKILL.md
 │   └── vaadin-create-project/SKILL.md
+├── hooks/                  # Claude Code hooks shipped by the plugin
+│   └── hooks.json          # PostToolUse: theme-mixing check after styling edits
 ├── go/                      # the CLI implementation (source of the binaries)
 │   ├── main.go  build.sh  go.mod
 │   └── internal/{cli,tool,tools,lib}/…
@@ -149,6 +151,36 @@ are a **no-op** — the tool reports a `THEME_INDETERMINATE` info finding and ex
 `0` rather than guessing. Ensuring correctness there is outside the tool's scope.
 
 Exit codes: `0` no error-level findings · `1` mixing detected · `2` usage error.
+
+## Hooks
+
+The plugin ships one Claude Code hook, wired up in
+[`hooks/hooks.json`](hooks/hooks.json) and referenced from the plugin manifest.
+
+**PostToolUse → theme-mixing check.** After the agent edits a file (`Edit`,
+`Write`, or `MultiEdit`), the hook runs the theme-mixing check and, only when it
+finds error-level mixing, feeds the findings back to the agent so it can fix
+them. The scope is deliberately narrow so the hook stays quiet — it speaks only
+when **all three** gates pass:
+
+1. The edited file is `.css` or `.java` (anything else is ignored).
+2. For `.java`, the text the edit *introduced* mentions a Vaadin styling API
+   (`getStyle(`, `*ClassName(s)`, `@CssImport` / `@StyleSheet` / `@Theme`,
+   `LumoUtility`, `--lumo-` / `--aura-`, `*ThemeName(s)`, `getThemeList(`). Any
+   `.css` edit qualifies.
+3. The theme-mixing check reports an error-level finding for the edited file's
+   project. Clean projects, warnings, and indeterminate results produce no
+   output, and the edit is never blocked.
+
+The hook logic lives in the native binary (`vaadin-agent-tools hook
+post-tool-use`, reading the PostToolUse event on stdin), so it runs identically
+on macOS, Linux, and Windows with no `bash`, `jq`, or PowerShell dependency. You
+can test it by hand:
+
+```shell
+echo '{"tool_input":{"file_path":"/abs/path/App.java","new_string":"btn.getStyle().set(\"color\",\"red\");"}}' \
+  | bin/vaadin-agent-tools hook post-tool-use
+```
 
 ## CLI contract
 

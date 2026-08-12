@@ -83,6 +83,9 @@ func topLevelHelp() string {
 	}
 	lines = append(lines,
 		"",
+		"Hooks (read a Claude Code event on stdin):",
+		"  hook post-tool-use     Flag Aura/Lumo theme mixing after a styling edit",
+		"",
 		"Global flags:",
 		"  --json        Emit machine-readable JSON (recommended for agents)",
 		"  -h, --help    Show help (use with a tool for tool-specific help)",
@@ -117,6 +120,14 @@ func Run(argv []string) int {
 	if len(pos) > 0 {
 		command = pos[0]
 		pos = pos[1:]
+	}
+
+	// The `hook` command reads a Claude Code hook event on stdin and emits a
+	// hook-specific JSON contract on stdout — it does not use the { tool, ok, ... }
+	// envelope, so it is handled before the tool registry.
+	if command == "hook" {
+		cwd, _ := os.Getwd()
+		return tools.RunHook(pos, os.Stdin, os.Stdout, cwd)
 	}
 
 	if command == "" || command == "help" || command == "list" {
