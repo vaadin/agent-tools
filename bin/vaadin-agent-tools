@@ -1,70 +1,40 @@
 #!/bin/sh
-# Launcher for @vaadin/agent-tools.
+# Selector for the vaadin-agent-tools plugin.
 #
-# Runs the JS CLI without requiring a global Node.js install, so the tools work
-# when vendored on disk (offline / in a sandbox) on a typical Vaadin machine,
-# where the only guaranteed runtime is the JVM and Node — if present at all — is
-# the copy Vaadin's frontend toolchain downloads under ~/.vaadin/node.
-#
-# A usable `node` is resolved in this order:
-#   1. $VAADIN_AGENT_TOOLS_NODE   (explicit override)
-#   2. `node` on PATH
-#   3. Node downloaded by Vaadin  (~/.vaadin/node)
-#   4. Project-local node/        (some Vaadin setups install here)
-#
-# Exit codes mirror the CLI (0 ok, 1 findings, 2 usage) plus:
-#   3  no Node.js runtime could be found
+# Execs the bundled native binary for this OS/arch. It only ever runs code
+# shipped INSIDE this plugin (bin/platform/) — it never searches $HOME or PATH
+# for a runtime, and needs neither Node nor a JVM.
 set -e
 
-# Resolve this script's real directory, following symlinks, so the launcher
-# works no matter where it is invoked from or vendored to.
-SELF="$0"
-while [ -h "$SELF" ]; do
-  self_dir="$(cd -P "$(dirname "$SELF")" && pwd)"
-  link="$(readlink "$SELF")"
-  case "$link" in
-    /*) SELF="$link" ;;
-    *) SELF="$self_dir/$link" ;;
-  esac
-done
-BIN_DIR="$(cd -P "$(dirname "$SELF")" && pwd)"
-CLI="$BIN_DIR/../src/cli.js"
+DIR="$(cd -P "$(dirname "$0")" && pwd)"
+P="$DIR/platform"
+os="$(uname -s)"
+arch="$(uname -m)"
+BIN=""
 
-find_node() {
-  if [ -n "$VAADIN_AGENT_TOOLS_NODE" ] && [ -x "$VAADIN_AGENT_TOOLS_NODE" ]; then
-    printf '%s\n' "$VAADIN_AGENT_TOOLS_NODE"
-    return 0
-  fi
-  if command -v node >/dev/null 2>&1; then
-    command -v node
-    return 0
-  fi
-  for candidate in \
-    "$HOME/.vaadin/node/node" \
-    "$HOME/.vaadin/node/bin/node" \
-    "$PWD/node/node" \
-    "$PWD/node/bin/node"; do
-    if [ -x "$candidate" ]; then
-      printf '%s\n' "$candidate"
-      return 0
+case "$os" in
+  Darwin)
+    if [ -x "$P/vaadin-agent-tools-darwin" ]; then
+      BIN="$P/vaadin-agent-tools-darwin" # universal (arm64 + amd64)
+    else
+      case "$arch" in
+        arm64)        BIN="$P/vaadin-agent-tools-darwin-arm64" ;;
+        x86_64|amd64) BIN="$P/vaadin-agent-tools-darwin-amd64" ;;
+      esac
     fi
-  done
-  return 1
-}
+    ;;
+  Linux)
+    case "$arch" in
+      x86_64|amd64)  BIN="$P/vaadin-agent-tools-linux-amd64" ;;
+      aarch64|arm64) BIN="$P/vaadin-agent-tools-linux-arm64" ;;
+    esac
+    ;;
+esac
 
-if ! NODE="$(find_node)"; then
-  cat >&2 <<'EOF'
-vaadin-agent-tools: could not find a Node.js runtime.
-
-Looked for: $VAADIN_AGENT_TOOLS_NODE, `node` on PATH, ~/.vaadin/node, ./node
-
-Fix one of:
-  - Install Node.js 18.3+ (https://nodejs.org), or
-  - Run a Vaadin frontend build once so Vaadin downloads Node under
-    ~/.vaadin/node, e.g.  ./mvnw vaadin:prepare-frontend
-  - Point VAADIN_AGENT_TOOLS_NODE at a node binary.
-EOF
-  exit 3
+if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
+  echo "vaadin-agent-tools: no bundled binary for $os/$arch." >&2
+  echo "Rebuild with go/build.sh, or add the target to the build matrix." >&2
+  exit 2
 fi
 
-exec "$NODE" "$CLI" "$@"
+exec "$BIN" "$@"

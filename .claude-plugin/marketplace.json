@@ -1,0 +1,16 @@
+{
+  "name": "vaadin-agent-tools-dev",
+  "owner": {
+    "name": "Vaadin"
+  },
+  "metadata": {
+    "description": "Local dev marketplace for trying the vaadin-agent-tools plugin from a checkout. For real distribution the plugin is published through vaadin/agent-marketplace."
+  },
+  "plugins": [
+    {
+      "name": "vaadin-agent-tools",
+      "source": "./",
+      "description": "Vaadin agent tools (Go build): Aura/Lumo theme-mixing checker, and room for more inspections."
+    }
+  ]
+}
