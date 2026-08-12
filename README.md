@@ -21,13 +21,15 @@ and no `$HOME` probing.
 
 ## Layout
 
-This repository **is** the plugin (manifest at the root), with the Go sources and
-the shared test fixtures alongside it:
+This repository **is** the plugin checkout, with Claude Code and Codex manifests,
+the Go sources, and the shared test fixtures alongside each other:
 
 ```
 .
+├── .codex-plugin/
+│   └── plugin.json         # Codex plugin manifest
 ├── .claude-plugin/
-│   ├── plugin.json          # plugin manifest
+│   ├── plugin.json          # Claude Code plugin manifest
 │   └── marketplace.json     # self-marketplace, for trying it from a checkout
 ├── bin/
 │   ├── vaadin-agent-tools       # POSIX arch selector (on PATH in Claude Code)
@@ -64,16 +66,26 @@ ready to run — no build step needed to try it.
 
 ### Codex
 
-Codex has no plugin package format, but it loads the same `SKILL.md`. Copy the
-skill into a project's (or your personal) skills directory:
+For real distribution, publish the plugin through
+[`vaadin/agent-marketplace`](https://github.com/vaadin/agent-marketplace)
+alongside `vaadin-skills`. After the `vaadin-agent-tools` entry is published
+there, install it from that marketplace:
 
 ```shell
-mkdir -p .codex/skills
-cp -R skills/vaadin-check-theme-mixing .codex/skills/
+codex plugin marketplace add vaadin/agent-marketplace --ref main
+codex plugin add vaadin-agent-tools@vaadin-marketplace
 ```
 
-The one difference from Claude Code: `${CLAUDE_PLUGIN_ROOT}` is Claude-only. For
-Codex, reference the launcher relative to the skill directory instead.
+To pick up later changes, refresh Git-backed marketplace snapshots:
+
+```shell
+codex plugin marketplace upgrade
+```
+
+Codex reads this repository's `.codex-plugin/plugin.json` and loads the shared
+`skills/` directory from the installed plugin. The prebuilt binaries are
+committed under `bin/platform/`, so a fresh install is ready to run without a
+build step.
 
 ## Run the CLI directly
 

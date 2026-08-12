@@ -1,0 +1,40 @@
+{
+  "name": "vaadin-agent-tools",
+  "version": "0.2.0",
+  "description": "Vaadin tools for AI agents: inspect and validate Vaadin projects with a self-contained native CLI.",
+  "author": {
+    "name": "Vaadin",
+    "url": "https://vaadin.com"
+  },
+  "homepage": "https://github.com/vaadin/agent-tools",
+  "repository": "https://github.com/vaadin/agent-tools",
+  "license": "Apache-2.0",
+  "keywords": [
+    "vaadin",
+    "agent",
+    "tools",
+    "lint",
+    "theme",
+    "aura",
+    "lumo"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Vaadin Agent Tools",
+    "shortDescription": "Inspect and validate Vaadin projects from Codex.",
+    "longDescription": "Vaadin Agent Tools bundles a native CLI and Codex skills for creating Vaadin projects and checking theme configuration issues such as Aura/Lumo mixing. It runs from committed binaries with no Node.js or JVM runtime requirement.",
+    "developerName": "Vaadin",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Skills",
+      "CLI",
+      "Code"
+    ],
+    "websiteURL": "https://vaadin.com",
+    "defaultPrompt": [
+      "Check this Vaadin project for theme mixing.",
+      "Create a new Vaadin project in ./my-app."
+    ],
+    "brandColor": "#056FF0"
+  }
+}
