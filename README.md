@@ -32,7 +32,7 @@ the shared test fixtures alongside it:
 ├── bin/
 │   ├── vaadin-agent-tools       # POSIX arch selector (on PATH in Claude Code)
 │   ├── vaadin-agent-tools.bat   # Windows selector
-│   └── platform/                # native binaries, produced by go/build.sh
+│   └── platform/                # native binaries (built by go/build.sh, committed)
 ├── skills/                 # one SKILL.md per tool (the agent surface)
 │   ├── vaadin-check-theme-mixing/SKILL.md
 │   └── vaadin-create-project/SKILL.md
@@ -59,8 +59,8 @@ a one-plugin dev marketplace:
 Then just ask — the skills trigger by description (e.g. "create a new Vaadin
 project" or "check this project for theme mixing") and the agent runs the tool.
 
-The binaries in `bin/platform/` must exist first — run `sh go/build.sh` once (see
-[Building](#building)).
+The prebuilt binaries are committed under `bin/platform/`, so a fresh checkout is
+ready to run — no build step needed to try it.
 
 ### Codex
 
@@ -193,18 +193,20 @@ The tests reuse the sample projects in [`test/fixtures`](test/fixtures).
 
 ## Distribution
 
-The native binaries in `bin/platform/` are `.gitignore`d as build artifacts. To
-publish through [`vaadin/agent-marketplace`](https://github.com/vaadin/agent-marketplace),
-either:
+The native binaries in `bin/platform/` are **committed to the repository** so that
+a git-source install (a fresh clone, or the marketplace) has a runnable plugin
+with no build step. When you change anything under `go/`, rebuild and commit the
+binaries in the same change so they stay in sync with the source:
 
-- **commit `bin/platform/`** (drop it from `.gitignore`) so a git-source install
-  fetches the binaries, or
-- attach a release archive and reference it from the marketplace entry with
-  `{ "source": "archive", "url": "…", "sha256": "…" }`.
+```shell
+sh go/build.sh && git add bin/platform
+```
 
 Because the plugin manifest is at the repository root, a marketplace entry can use
-a plain `url` source pointing at this repo — the same pattern
-`vaadin-skills` uses.
+a plain `url` source pointing at this repo — the same pattern `vaadin-skills`
+uses. (If the committed binaries ever become too heavy for the repo, the
+alternative is to keep them out and ship a release archive referenced from the
+marketplace entry with `{ "source": "archive", "url": "…", "sha256": "…" }`.)
 
 ## Relationship to `create-vaadin`
 
