@@ -151,12 +151,12 @@ func sanitizeName(s string) string {
 }
 
 // buildSkeletonURL assembles the start.vaadin.com/skeleton URL. Query parameters
-// mirror create-vaadin: artifactId, ref=cli, optional frameworks=flow, optional
+// mirror create-vaadin: artifactId, ref=agent-tools, optional frameworks=flow, optional
 // platformVersion=pre.
 func buildSkeletonURL(artifactID, example string, pre bool) string {
 	q := url.Values{}
 	q.Set("artifactId", artifactID)
-	q.Set("ref", "cli")
+	q.Set("ref", "agent-tools")
 	if example == "flow" {
 		q.Set("frameworks", "flow")
 	}
