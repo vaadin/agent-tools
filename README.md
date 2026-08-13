@@ -32,7 +32,7 @@ the Go sources, and the shared test fixtures alongside each other:
 │   ├── plugin.json          # Claude Code plugin manifest
 │   └── marketplace.json     # self-marketplace, for trying it from a checkout
 ├── bin/
-│   ├── vaadin-agent-tools       # POSIX arch selector (on PATH in Claude Code)
+│   ├── vaadin-agent-tools       # POSIX arch selector (run via ${CLAUDE_PLUGIN_ROOT})
 │   ├── vaadin-agent-tools.bat   # Windows selector
 │   └── platform/                # native binaries (built by go/build.sh, committed)
 ├── skills/                 # one SKILL.md per tool (the agent surface)
@@ -174,8 +174,15 @@ when **all three** gates pass:
 
 The hook logic lives in the native binary (`vaadin-agent-tools hook
 post-tool-use`, reading the PostToolUse event on stdin), so it runs identically
-on macOS, Linux, and Windows with no `bash`, `jq`, or PowerShell dependency. You
-can test it by hand:
+on macOS, Linux, and Windows with no `bash`, `jq`, or PowerShell dependency. The
+plugin isn't on `PATH`, so [`hooks/hooks.json`](hooks/hooks.json) invokes the
+selector through `${CLAUDE_PLUGIN_ROOT}`, the plugin's install directory:
+
+```json
+"command": "\"${CLAUDE_PLUGIN_ROOT}/bin/vaadin-agent-tools\" hook post-tool-use"
+```
+
+You can test it by hand:
 
 ```shell
 echo '{"tool_input":{"file_path":"/abs/path/App.java","new_string":"btn.getStyle().set(\"color\",\"red\");"}}' \

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "vaadin-agent-tools hook post-tool-use"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/vaadin-agent-tools\" hook post-tool-use"
           }
         ]
       }
