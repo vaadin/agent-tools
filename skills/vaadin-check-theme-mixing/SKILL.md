@@ -1,6 +1,6 @@
 ---
 name: vaadin-check-theme-mixing
-description: Detect whether a Vaadin project mixes the Aura and Lumo base themes, which produces conflicting styles and unresolved CSS custom properties. Use when reviewing or building a Vaadin UI, switching or configuring a theme, importing theme stylesheets, or when the user reports styles or --lumo-* / --aura-* custom properties not resolving.
+description: Detect whether a Vaadin project mixes the Aura and Lumo base themes, which produces conflicting styles and unresolved CSS custom properties. Use when reviewing or building a Vaadin UI, switching or configuring a theme, applying theme variants, importing theme stylesheets, or when the user reports styles or --lumo-* / --aura-* custom properties not resolving.
 ---
 
 # vaadin-check-theme-mixing
