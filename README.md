@@ -252,13 +252,6 @@ uses. (If the committed binaries ever become too heavy for the repo, the
 alternative is to keep them out and ship a release archive referenced from the
 marketplace entry with `{ "source": "archive", "url": "…", "sha256": "…" }`.)
 
-## Relationship to `create-vaadin`
-
-This project is separate from
-[`create-vaadin`](https://www.npmjs.com/package/create-vaadin) (the package behind
-`npm init vaadin`). `create-vaadin` scaffolds new applications;
-`vaadin-agent-tools` inspects and validates existing ones.
-
 ## License
 
 Apache-2.0
