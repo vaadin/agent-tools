@@ -1,12 +1,11 @@
 {
   "name": "vaadin-agent-tools",
   "description": "Vaadin tools for AI agents — inspect and validate Vaadin projects. Ships a self-contained native CLI (no Node or JVM required at runtime).",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": {
     "name": "Vaadin"
   },
   "homepage": "https://github.com/vaadin/agent-tools",
   "license": "Apache-2.0",
-  "keywords": ["vaadin", "agent", "tools", "lint", "theme", "aura", "lumo"],
-  "hooks": "./hooks/hooks.json"
+  "keywords": ["vaadin", "agent", "tools", "lint", "theme", "aura", "lumo"]
 }

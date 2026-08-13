@@ -27,7 +27,7 @@ func jsonIndent(v any) string {
 }
 
 // Version is the CLI version. Kept in lockstep with the npm package version.
-const Version = "0.2.0"
+const Version = "0.2.1"
 
 // registry lists the available tools. To add a tool: implement a
 // tool.Descriptor in internal/tools and append it here.
