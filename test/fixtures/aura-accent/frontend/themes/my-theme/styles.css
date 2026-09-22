@@ -1,0 +1,17 @@
+/* No accent class name here, so Aura never recomputes --aura-accent-surface —
+   the tile keeps the inherited accent color. */
+.highlight-tile {
+  --aura-accent-color-light: var(--aura-orange);
+  --aura-accent-color-dark: var(--aura-orange);
+  background: var(--aura-accent-surface);
+}
+
+/* Fine: global customization. */
+html {
+  --aura-accent-color-light: var(--aura-blue);
+}
+
+/* Fine: an accent class name is applied. */
+.aura-accent-green.status-tile {
+  --aura-accent-color-light: var(--aura-green);
+}

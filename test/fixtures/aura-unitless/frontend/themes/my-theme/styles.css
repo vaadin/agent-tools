@@ -1,0 +1,13 @@
+html {
+  /* Feeds a calc()/clamp() — a unitless zero invalidates the expression. */
+  --aura-app-layout-inset: 0;
+  --aura-app-layout-radius: 0;
+
+  /* Unitless by design — these must not be flagged. */
+  --aura-base-size: 16;
+  --aura-base-radius: 0;
+  --aura-contrast-level: 0;
+  --aura-surface-level: 0;
+  --aura-surface-opacity: 0.5;
+  --aura-font-weight-regular: 400;
+}

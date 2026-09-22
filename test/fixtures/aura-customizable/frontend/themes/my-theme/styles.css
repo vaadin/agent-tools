@@ -1,0 +1,17 @@
+/* The nine computed-but-customizable properties: a naive "is it computed?"
+   scan flags these, but they are the documented override points and must not
+   be reported. */
+html {
+  --aura-accent-contrast-color-light: white;
+  --aura-accent-contrast-color-dark: black;
+  --aura-accent-text-color-light: #1a3d7c;
+  --aura-accent-text-color-dark: #9db8ef;
+  --aura-neutral-light: #23252a;
+  --aura-neutral-dark: #f2f3f5;
+  --aura-overlay-inner-outline-color: hsla(0deg, 0%, 100%, 0.05);
+  --aura-overlay-outline-color: rgba(0, 0, 0, 0.06);
+  --aura-shadow-color: rgba(0, 0, 0, 0.2);
+
+  /* --aura-app-background is computed too, but the docs say you may set it. */
+  --aura-app-background: var(--aura-background-color);
+}

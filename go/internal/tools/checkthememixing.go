@@ -68,25 +68,7 @@ func renderThemeMixingHuman(r themeMixingReport) string {
 	out = append(out, fmt.Sprintf("files scanned: %d", r.FilesScanned))
 	out = append(out, "")
 
-	if len(r.Findings) == 0 {
-		out = append(out, "✓ No issues found.")
-	} else {
-		for _, f := range r.Findings {
-			marker := "ℹ"
-			switch f.Level {
-			case "error":
-				marker = "✗"
-			case "warning":
-				marker = "⚠"
-			}
-			out = append(out, fmt.Sprintf("%s [%s] %s (confidence: %s)", marker, f.Level, f.Code, f.Confidence))
-			out = append(out, "  "+f.Message)
-			for _, e := range f.Evidence {
-				out = append(out, fmt.Sprintf("    %s:%d  %s", e.File, e.Line, e.Snippet))
-			}
-			out = append(out, "")
-		}
-	}
+	out = append(out, lib.RenderFindings(r.Findings)...)
 	return strings.TrimRight(strings.Join(out, "\n"), "\n")
 }
 

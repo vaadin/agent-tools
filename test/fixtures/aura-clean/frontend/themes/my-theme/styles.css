@@ -1,0 +1,33 @@
+/* Correct Aura usage: customize the inputs, read the computed properties. */
+html {
+  --aura-background-color-light: khaki;
+  --aura-background-color-dark: darkslateblue;
+  --aura-accent-color-light: var(--aura-purple);
+  --aura-accent-color-dark: var(--aura-purple);
+  --aura-base-font-size: 16;
+  --aura-base-line-height: 1.5;
+  --aura-contrast-level: 2;
+  --aura-app-layout-inset: 0px;
+  --aura-font-family: var(--aura-font-family-system);
+}
+
+.elevated-box {
+  background-color: var(--aura-surface-color);
+  color: var(--vaadin-text-color);
+  border: 1px solid var(--aura-accent-border-color);
+  font-size: var(--aura-font-size-l);
+  line-height: var(--aura-line-height-l);
+}
+
+/* Surface properties belong on an element that uses the surface color. */
+.aura-surface.recessed-box {
+  --aura-surface-level: -1;
+}
+
+vaadin-button {
+  --aura-surface-level: 0;
+}
+
+::part(input-field) {
+  --aura-surface-opacity: 0.25;
+}

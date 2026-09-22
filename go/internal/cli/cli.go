@@ -27,11 +27,12 @@ func jsonIndent(v any) string {
 }
 
 // Version is the CLI version. Kept in lockstep with the npm package version.
-const Version = "0.2.1"
+const Version = "0.3.0"
 
 // registry lists the available tools. To add a tool: implement a
 // tool.Descriptor in internal/tools and append it here.
 var registry = []tool.Descriptor{
+	tools.CheckAuraUsage,
 	tools.CheckThemeMixing,
 	tools.CreateProject,
 }
@@ -84,7 +85,7 @@ func topLevelHelp() string {
 	lines = append(lines,
 		"",
 		"Hooks (read a Claude Code event on stdin):",
-		"  hook post-tool-use     Flag Aura/Lumo theme mixing after a styling edit",
+		"  hook post-tool-use     Run the styling checks after a styling edit",
 		"",
 		"Global flags:",
 		"  --json        Emit machine-readable JSON (recommended for agents)",

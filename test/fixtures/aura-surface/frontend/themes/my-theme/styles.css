@@ -1,0 +1,40 @@
+/* Neither selector carries aura-surface / aura-surface-solid, and neither is a
+   built-in component that uses the surface color — both declarations are
+   silently ignored. */
+.dashboard-tile {
+  --aura-surface-level: 3;
+  background: var(--aura-surface-color);
+}
+
+@media (min-width: 900px) {
+  .sidebar-panel {
+    --aura-surface-opacity: 0.8;
+  }
+}
+
+/* Fine: the class is on the element itself. */
+.aura-surface-solid.hero {
+  --aura-surface-level: 2;
+}
+
+/* Fine: a built-in component that uses the surface color. */
+vaadin-card {
+  --aura-surface-level: 0;
+}
+
+/* Fine: nested under an element that is a surface. */
+.aura-surface {
+  &.compact {
+    --aura-surface-opacity: 1;
+  }
+}
+
+/* Fine: Aura recomputes --aura-accent-surface on a badge, and that computation
+   reads the surface level/opacity — so an accent selector responds to them too. */
+vaadin-badge {
+  --aura-surface-level: 1;
+}
+
+.aura-accent-surface-solid {
+  --aura-surface-opacity: 1;
+}

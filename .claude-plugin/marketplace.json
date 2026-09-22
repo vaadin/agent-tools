@@ -10,7 +10,7 @@
     {
       "name": "vaadin-agent-tools",
       "source": "./",
-      "description": "Vaadin agent tools (Go build): Aura/Lumo theme-mixing checker, and room for more inspections."
+      "description": "Vaadin agent tools (Go build): Aura/Lumo theme-mixing checker, Aura usage validator, and room for more inspections."
     }
   ]
 }
