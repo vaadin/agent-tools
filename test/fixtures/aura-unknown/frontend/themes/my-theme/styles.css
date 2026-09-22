@@ -1,0 +1,15 @@
+/* A project may define its own --aura-* properties; reading those is fine. */
+html {
+  --aura-card-padding: 1rem;
+}
+
+.card {
+  padding: var(--aura-card-padding);
+
+  /* Hallucinated / Lumo-shaped names the Aura theme does not define. */
+  color: var(--aura-primary-color);
+  background: var(--aura-contrast-5pct);
+
+  /* Known, so not reported. */
+  border-radius: var(--aura-app-layout-radius);
+}

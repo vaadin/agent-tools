@@ -22,10 +22,12 @@ import (
 //	vaadin-agent-tools hook post-tool-use
 //
 // It reads a Claude Code PostToolUse payload from stdin and, when the edit that
-// just happened actually touched Vaadin styling AND the file's project mixes the
-// Aura and Lumo base themes, prints a PostToolUse response asking the agent to
-// fix it. In every other case it stays completely silent. It always exits 0 so a
-// styling edit is never blocked by this hook.
+// just happened actually touched Vaadin styling, runs the styling checks
+// (check-theme-mixing and check-aura-usage) against the edited file's own
+// project. Only when one of them reports an error-level finding does it print a
+// PostToolUse response asking the agent to fix it. In every other case it stays
+// completely silent. It always exits 0 so a styling edit is never blocked by
+// this hook.
 //
 // Being part of the native binary, it runs identically on macOS, Linux and
 // Windows — no bash, jq or PowerShell required.
@@ -121,19 +123,26 @@ func runPostToolUseHook(stdin io.Reader, stdout io.Writer, cwd string) int {
 	// Scope the check to the edited file's own project.
 	project := projectRootFor(file, cwd)
 
-	// --- Gate 3: only speak when the checker finds error-level mixing. ---
-	report := analyzeThemeMixing(tool.Args{Positionals: []string{project}, JSON: true, Cwd: cwd})
-	if report.UsageError != "" || report.OK {
+	// --- Gate 3: only speak when a check finds an error-level problem. ---
+	args := tool.Args{Positionals: []string{project}, JSON: true, Cwd: cwd}
+	var sections []string
+
+	if r := analyzeThemeMixing(args); r.UsageError == "" && !r.OK {
+		sections = append(sections, envelopeFor("check-theme-mixing", r.OK, r))
+	}
+	if r := analyzeAuraUsage(args); r.UsageError == "" && !r.OK {
+		sections = append(sections, envelopeFor("check-aura-usage", r.OK, r))
+	}
+	if len(sections) == 0 {
 		return 0
 	}
 
 	var resp postToolUseResponse
 	resp.HookSpecificOutput.HookEventName = "PostToolUse"
 	resp.HookSpecificOutput.AdditionalContext =
-		"Vaadin theme-mixing check flagged issues after this styling change. " +
-			"Review the findings and fix any error-level ones " +
-			"(MULTIPLE_BASE_THEMES, LUMO_UTILITY_WITHOUT_LUMO_THEME):\n" +
-			envelopeFor("check-theme-mixing", report)
+		"Vaadin styling checks flagged issues after this change. Review the findings " +
+			"below and fix the error-level ones:\n" +
+			strings.Join(sections, "\n")
 
 	out, err := json.MarshalIndent(resp, "", "  ")
 	if err != nil {
@@ -171,22 +180,16 @@ func projectRootFor(file, cwd string) string {
 }
 
 // envelopeFor renders the same { "tool", "ok", ...payload } JSON the CLI emits,
-// so the context handed to the agent matches `check-theme-mixing --json` output.
-func envelopeFor(name string, r themeMixingReport) string {
-	env := struct {
-		Tool              string        `json:"tool"`
-		OK                bool          `json:"ok"`
-		ThemesLoaded      []string      `json:"themesLoaded"`
-		TokenPrefixesUsed []string      `json:"tokenPrefixesUsed"`
-		FilesScanned      int           `json:"filesScanned"`
-		Findings          []lib.Finding `json:"findings"`
-	}{
-		Tool:              name,
-		OK:                r.OK,
-		ThemesLoaded:      r.ThemesLoaded,
-		TokenPrefixesUsed: r.TokenPrefixesUsed,
-		FilesScanned:      r.FilesScanned,
-		Findings:          r.Findings,
+// so the context handed to the agent matches that tool's `--json` output.
+func envelopeFor(name string, ok bool, payload any) string {
+	head := lib.MarshalIndentNoEscape(struct {
+		Tool string `json:"tool"`
+		OK   bool   `json:"ok"`
+	}{name, ok})
+	body := lib.MarshalIndentNoEscape(payload)
+	if body == "{}" || body == "null" || body == "" {
+		return head
 	}
-	return lib.MarshalIndentNoEscape(env)
+	// Splice the payload's own fields in after "ok", keeping their order.
+	return strings.TrimSuffix(head, "\n}") + "," + body[1:]
 }

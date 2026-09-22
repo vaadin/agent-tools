@@ -36,13 +36,16 @@ the Go sources, and the shared test fixtures alongside each other:
 │   ├── vaadin-agent-tools.bat   # Windows selector
 │   └── platform/                # native binaries (built by go/build.sh, committed)
 ├── skills/                 # one SKILL.md per tool (the agent surface)
+│   ├── vaadin-check-aura-usage/SKILL.md
 │   ├── vaadin-check-theme-mixing/SKILL.md
 │   └── vaadin-create-project/SKILL.md
 ├── hooks/                  # Claude Code hooks shipped by the plugin
-│   └── hooks.json          # PostToolUse: theme-mixing check after styling edits
+│   └── hooks.json          # PostToolUse: styling checks after styling edits
 ├── go/                      # the CLI implementation (source of the binaries)
 │   ├── main.go  build.sh  go.mod
 │   └── internal/{cli,tool,tools,lib}/…
+├── scripts/                 # maintenance scripts
+│   └── derive-aura-properties.sh   # refresh the Aura property tables per release
 └── test/fixtures/           # sample projects, shared by the Go tests
 ```
 
@@ -152,25 +155,72 @@ are a **no-op** — the tool reports a `THEME_INDETERMINATE` info finding and ex
 
 Exit codes: `0` no error-level findings · `1` mixing detected · `2` usage error.
 
+### `check-aura-usage`
+
+Validates how a project's CSS uses the **Aura** theme's custom properties. Doc
+search can tell an agent the rule; this tells it that the stylesheet it just
+generated breaks the rule.
+
+```shell
+bin/vaadin-agent-tools check-aura-usage ./my-project
+bin/vaadin-agent-tools check-aura-usage ./my-project --json
+```
+
+| Code | Level | What it catches |
+| --- | --- | --- |
+| `AURA_READONLY_PROPERTY_ASSIGNED` | error | A property Aura computes is assigned. Most are defined with `light-dark(…)`, so assigning one value discards *both* color-scheme values and dark mode stops working. The message names the customizable property to set instead. The two font stacks (`--aura-font-family-system`, `--aura-font-family-instrument-sans`) are a warning: redefining them is wrong usage rather than a dark-mode bug. |
+| `AURA_SURFACE_PROPERTY_WITHOUT_SURFACE_CLASS` | warning | `--aura-surface-level` / `--aura-surface-opacity` set on a selector that carries neither `aura-surface` nor `aura-surface-solid` and is not one of the built-in components that use the surface color. Silently does nothing. |
+| `AURA_ACCENT_SURFACE_WITHOUT_ACCENT_CLASS` | warning | `--aura-accent-color-light` / `-dark` set on a selector Aura does not recompute the accent-derived colors on, so `--aura-accent-surface` keeps its inherited tint. Silently does nothing. |
+| `AURA_UNITLESS_LENGTH` | error | An Aura length property given a bare number (`--aura-app-layout-inset: 0`). It feeds a `calc()`, so it needs a unit even at zero. |
+| `AURA_UNKNOWN_PROPERTY` | warning | `var()` reads an `--aura-*` property that neither the theme nor the project defines — a typo or a hallucinated token. Fires on *reads* only; a project may define its own `--aura-`-prefixed properties. |
+
+Exit codes: `0` no error-level findings · `1` error-level findings · `2` usage
+error.
+
+#### The Aura property tables
+
+The property names come from `@vaadin/aura` and are embedded in
+[`go/internal/tools/auradata.go`](go/internal/tools/auradata.go) —
+77 names measured from `@vaadin/aura@25.3.0-rc1` (74 the theme defines plus 3 it
+only reads through a fallback). Re-derive them and diff against the embedded
+table with:
+
+```shell
+sh scripts/derive-aura-properties.sh [version]
+```
+
+The *names* are derivable; the **write-safety classification is not**. Nine
+properties are computed from other properties and are still the documented,
+intended override points — `--aura-neutral-light` / `-dark`,
+`--aura-accent-text-color-light` / `-dark`,
+`--aura-accent-contrast-color-light` / `-dark`,
+`--aura-overlay-outline-color`, `--aura-overlay-inner-outline-color` and
+`--aura-shadow-color`. A naive "is it computed?" scan would flag exactly the
+properties an agent needs most, so the split follows the `Read-only` and
+`light-dark()` badges in the Vaadin Aura reference pages instead, and is
+maintained by hand. `test/fixtures/aura-customizable` is a regression test for
+that false-positive trap.
+
 ## Hooks
 
 The plugin ships one Claude Code hook, wired up in
 [`hooks/hooks.json`](hooks/hooks.json) and referenced from the plugin manifest.
 
-**PostToolUse → theme-mixing check.** After the agent edits a file (`Edit`,
-`Write`, or `MultiEdit`), the hook runs the theme-mixing check and, only when it
-finds error-level mixing, feeds the findings back to the agent so it can fix
-them. The scope is deliberately narrow so the hook stays quiet — it speaks only
-when **all three** gates pass:
+**PostToolUse → styling checks.** After the agent edits a file (`Edit`, `Write`,
+or `MultiEdit`), the hook runs the styling checks — `check-theme-mixing` and
+`check-aura-usage` — and, only when one of them finds an error-level problem,
+feeds the findings back to the agent so it can fix them. The scope is
+deliberately narrow so the hook stays quiet — it speaks only when **all three**
+gates pass:
 
 1. The edited file is `.css` or `.java` (anything else is ignored).
 2. For `.java`, the text the edit *introduced* mentions a Vaadin styling API
    (`getStyle(`, `*ClassName(s)`, `@CssImport` / `@StyleSheet` / `@Theme`,
    `LumoUtility`, `--lumo-` / `--aura-`, `*ThemeName(s)`, `getThemeList(`). Any
    `.css` edit qualifies.
-3. The theme-mixing check reports an error-level finding for the edited file's
-   project. Clean projects, warnings, and indeterminate results produce no
-   output, and the edit is never blocked.
+3. A check reports an error-level finding for the edited file's project. Clean
+   projects, warnings, and indeterminate results produce no output, and the edit
+   is never blocked.
 
 The hook logic lives in the native binary (`vaadin-agent-tools hook
 post-tool-use`, reading the PostToolUse event on stdin), so it runs identically

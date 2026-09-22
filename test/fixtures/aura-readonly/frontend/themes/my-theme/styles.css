@@ -1,0 +1,18 @@
+html {
+  /* Every one of these is computed by Aura — assigning them breaks the
+     light/dark schemes or the computed scale. */
+  --aura-background-color: #fff;
+  --aura-accent-color: rebeccapurple;
+  --aura-surface-color: #eee;
+  --aura-font-size-m: 15px;
+  --aura-line-height-m: 22px;
+  --aura-red-text: #900;
+  --aura-neutral: #333;
+
+  /* Milder: a font stack meant to be assigned to --aura-font-family. */
+  --aura-font-family-system: Helvetica, sans-serif;
+
+  /* Reassigned by Aura, so read-only while Aura is the loaded theme. */
+  --vaadin-text-color: #222;
+  --vaadin-border-color: #ccc;
+}

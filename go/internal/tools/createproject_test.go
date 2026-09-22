@@ -32,9 +32,9 @@ func TestBuildSkeletonURL(t *testing.T) {
 		pre     bool
 		want    string
 	}{
-		{"my-app", "flow", false, "https://start.vaadin.com/skeleton?artifactId=my-app&frameworks=flow&ref=cli"},
-		{"my-app", "none", false, "https://start.vaadin.com/skeleton?artifactId=my-app&ref=cli"},
-		{"my-app", "flow", true, "https://start.vaadin.com/skeleton?artifactId=my-app&frameworks=flow&platformVersion=pre&ref=cli"},
+		{"my-app", "flow", false, "https://start.vaadin.com/skeleton?artifactId=my-app&frameworks=flow&ref=agent-tools"},
+		{"my-app", "none", false, "https://start.vaadin.com/skeleton?artifactId=my-app&ref=agent-tools"},
+		{"my-app", "flow", true, "https://start.vaadin.com/skeleton?artifactId=my-app&frameworks=flow&platformVersion=pre&ref=agent-tools"},
 	}
 	for _, c := range cases {
 		if got := buildSkeletonURL(c.name, c.example, c.pre); got != c.want {
