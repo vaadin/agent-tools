@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -332,18 +334,45 @@ func TestAuraFlagsReadOnlyPropertyAssignedFromJava(t *testing.T) {
 				f.Message, len(f.Evidence), f.Evidence)
 			continue
 		}
-		e := f.Evidence[0]
-		if !strings.HasSuffix(e.File, "DashboardView.java") {
-			t.Errorf("evidence points at %s, but only DashboardView assigns anything", e.File)
+		if !strings.HasSuffix(f.Evidence[0].File, "DashboardView.java") {
+			t.Errorf("evidence points at %s, but only DashboardView assigns anything",
+				f.Evidence[0].File)
+			continue
 		}
-		if e.Line == 0 || e.Snippet == "" {
-			t.Errorf("finding %q carries an empty evidence entry: %+v", f.Message, e)
-		}
-		// The line must be the one the property name is written on, so the
-		// snippet and the line number agree.
-		if !strings.Contains(e.Snippet, "--") {
-			t.Errorf("snippet %q does not show the assignment", e.Snippet)
-		}
+		assertEvidenceMatchesSource(t, "aura-java-inline", f.Evidence[0], subjectOf(f))
+	}
+}
+
+// subjectOf returns the property a finding is about: every message names it
+// first.
+func subjectOf(f lib.Finding) string {
+	return strings.SplitN(f.Message, " ", 2)[0]
+}
+
+// assertEvidenceMatchesSource checks a finding's location against the fixture
+// itself: the reported line must be the line the property is written on, and the
+// snippet must be that line. Reading the source beats hard-coding line numbers,
+// which every fixture edit would churn, and it is what actually catches an
+// off-by-one in the Java offsets.
+func assertEvidenceMatchesSource(t *testing.T, fixture string, e lib.Evidence, property string) {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(fixturesDir(t), fixture, e.File))
+	if err != nil {
+		t.Fatalf("read fixture source: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+	if e.Line < 1 || e.Line > len(lines) {
+		t.Errorf("%s: line %d is outside %s (%d lines)", property, e.Line, e.File, len(lines))
+		return
+	}
+	source := lines[e.Line-1]
+	if !strings.Contains(source, property+`"`) {
+		t.Errorf("%s: reported at %s:%d, but that line is %q",
+			property, e.File, e.Line, strings.TrimSpace(source))
+	}
+	if e.Snippet != strings.TrimSpace(source) {
+		t.Errorf("%s: snippet %q is not line %d of %s (%q)",
+			property, e.Snippet, e.Line, e.File, strings.TrimSpace(source))
 	}
 }
 

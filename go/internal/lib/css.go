@@ -54,19 +54,9 @@ func BlankJavaTextBlocks(src string) string {
 	for i := 0; i < len(out); {
 		switch {
 		case isTextBlockDelimiter(out, i):
-			j := i + 3
-			for j < len(out) && !isTextBlockDelimiter(out, j) {
-				if out[j] == '\\' {
-					j++ // an escaped quote does not close the block
-				}
-				j++
-			}
-			blankRange(out, i+3, j)
-			if j >= len(out) {
-				i = len(out) // unterminated block: blanked to EOF
-			} else {
-				i = j + 3
-			}
+			contentEnd, blockEnd := javaTextBlock(out, i)
+			blankRange(out, i+3, contentEnd)
+			i = blockEnd
 
 		case out[i] == '"' || out[i] == '\'':
 			// Step over an ordinary string or char literal, so a quote inside one
@@ -92,6 +82,28 @@ func BlankJavaTextBlocks(src string) string {
 // close a text block at i.
 func isTextBlockDelimiter(buf []byte, i int) bool {
 	return i+2 < len(buf) && buf[i] == '"' && buf[i+1] == '"' && buf[i+2] == '"'
+}
+
+// javaTextBlock locates the end of the text block opening at i: contentEnd is
+// where its contents stop (the closing delimiter, or EOF when the block is
+// unterminated) and blockEnd is where scanning resumes after it.
+//
+// Both Java passes call this, so they can never disagree about where a block
+// ends — and a disagreement is not harmless: a comment pass that ran past the
+// closing delimiter would leave the text-block pass to blank the real code
+// after it, and the assignments there would go unreported.
+func javaTextBlock(buf []byte, i int) (contentEnd, blockEnd int) {
+	j := i + 3
+	for j < len(buf) && !isTextBlockDelimiter(buf, j) {
+		if buf[j] == '\\' {
+			j++ // an escaped quote does not close the block
+		}
+		j++
+	}
+	if j >= len(buf) {
+		return len(buf), len(buf)
+	}
+	return j, j + 3
 }
 
 // blankRange overwrites buf[from:to] with spaces. Line terminators are kept so
@@ -135,6 +147,14 @@ func blankComments(src string, lineComments bool) string {
 			}
 			blank(i, j)
 			i = j
+
+		case lineComments && isTextBlockDelimiter(out, i):
+			// A Java text block is one literal, however many quotes it contains.
+			// Lexing it as a run of ordinary strings desynchronizes everything
+			// after it — the contents can end up scanned as code, and the closing
+			// delimiter erased as a comment.
+			_, blockEnd := javaTextBlock(out, i)
+			i = blockEnd
 
 		case c == '"' || c == '\'':
 			// Step over the literal so its contents are never read as structure.

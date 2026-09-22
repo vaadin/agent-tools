@@ -279,6 +279,18 @@ func TestBlankJavaTextBlocksSkipsOrdinaryLiterals(t *testing.T) {
 	}
 }
 
+// The comment pass and the text-block pass must agree about where a block ends.
+// When the comment pass lexes """ as ordinary strings, a quote inside the block
+// lets a // there erase the closing delimiter — and the text-block pass then
+// blanks the real code after it as an unterminated block.
+func TestBlankJavaCommentsKeepsTextBlocksIntact(t *testing.T) {
+	src := "String doc = \"\"\"\n\" // \"\"\";\nstyle.set(\"--aura-red-text\", \"#900\");\n"
+	got := BlankJavaTextBlocks(BlankJavaComments(src))
+	if !strings.Contains(got, `set("--aura-red-text", "#900")`) {
+		t.Fatalf("the statement after the text block was blanked away: %q", got)
+	}
+}
+
 // An unterminated block blanks to EOF rather than looping or panicking.
 func TestBlankJavaTextBlocksHandlesUnterminatedBlock(t *testing.T) {
 	src := "String doc = \"\"\"\n  set(\"--aura-red-text\", \"#900\");\n"
