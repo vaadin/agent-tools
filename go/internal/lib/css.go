@@ -49,7 +49,10 @@ func blankComments(src string, lineComments bool) string {
 	out := []byte(src)
 	blank := func(from, to int) {
 		for k := from; k < to && k < len(out); k++ {
-			if out[k] != '\n' {
+			// Line terminators are kept so line numbers computed against the
+			// original source still hold. Java (JLS 3.4) and CSS both count a bare
+			// CR as one, so neither may be blanked away.
+			if out[k] != '\n' && out[k] != '\r' {
 				out[k] = ' '
 			}
 		}
@@ -73,7 +76,7 @@ func blankComments(src string, lineComments bool) string {
 
 		case lineComments && c == '/' && i+1 < len(out) && out[i+1] == '/':
 			j := i
-			for j < len(out) && out[j] != '\n' {
+			for j < len(out) && out[j] != '\n' && out[j] != '\r' {
 				j++
 			}
 			blank(i, j)
@@ -302,9 +305,33 @@ func normalizeSelector(sel string) string {
 	var b strings.Builder
 	b.Grow(len(sel))
 	inBrackets := 0
+	var quote byte // the open string delimiter, or 0 outside a string
 	for i := 0; i < len(sel); i++ {
 		c := sel[i]
+
+		// Inside a quoted value nothing is structure: a '[' there does not open a
+		// bracket, a space there is part of the value, and the case is significant
+		// (attribute values are case-sensitive, unlike the rest of a selector).
+		if quote != 0 {
+			if c == '\\' && i+1 < len(sel) {
+				b.WriteByte(c)
+				i++
+				b.WriteByte(sel[i])
+				continue
+			}
+			if c == quote {
+				quote = 0
+				b.WriteByte('\'') // both delimiters normalize to '
+				continue
+			}
+			b.WriteByte(c)
+			continue
+		}
+
 		switch {
+		case c == '"' || c == '\'':
+			quote = c
+			b.WriteByte('\'')
 		case c == '[':
 			inBrackets++
 			b.WriteByte(c)
@@ -315,8 +342,6 @@ func normalizeSelector(sel string) string {
 			b.WriteByte(c)
 		case inBrackets > 0 && (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'):
 			// dropped
-		case c == '"':
-			b.WriteByte('\'')
 		case c >= 'A' && c <= 'Z':
 			b.WriteByte(c + 'a' - 'A')
 		default:

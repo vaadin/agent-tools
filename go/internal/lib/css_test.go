@@ -167,10 +167,10 @@ func TestSelectorChainMatchesNormalizesEquivalentSpellings(t *testing.T) {
 	}{
 		{[]string{`[theme~="success"]`}, `[theme~='success']`, true},
 		{[]string{`[theme~= "success"]`}, `[theme~='success']`, true},
-		// Matching is case-insensitive throughout. An attribute value is really
-		// case-sensitive in CSS, so this is lenient — but leniency here only ever
-		// suppresses a heuristic warning, never invents one.
-		{[]string{`[THEME~='SUCCESS']`}, `[theme~='success']`, true},
+		// A selector is matched case-insensitively, but an attribute VALUE is
+		// case-sensitive in CSS, so these two are genuinely different selectors.
+		{[]string{`[THEME~='SUCCESS']`}, `[theme~='success']`, false},
+		{[]string{`[THEME~='success']`}, `[theme~='success']`, true},
 		{[]string{`[theme~='danger']`}, `[theme~='success']`, false},
 		// A non-ASCII suffix makes it a different class identifier.
 		{[]string{".aura-surfaceé"}, ".aura-surface", false},
@@ -199,5 +199,49 @@ func TestSelectorChainMatchesKeepsDescendantCombinator(t *testing.T) {
 		if got := SelectorChainMatches(c.chain, []string{c.token}); got != c.want {
 			t.Errorf("SelectorChainMatches(%v, %q) = %v, want %v", c.chain, c.token, got, c.want)
 		}
+	}
+}
+
+// A quoted attribute value is not structure: brackets in it must not shift the
+// bracket depth, and whitespace in it must not be folded away.
+func TestSelectorChainMatchesTreatsQuotedValuesAsOpaque(t *testing.T) {
+	cases := []struct {
+		chain []string
+		token string
+		want  bool
+	}{
+		// A '[' inside a value used to leave the depth positive, which folded the
+		// descendant combinators after it and hid the real subject.
+		{[]string{`[data-label="["] span vaadin-button`}, "vaadin-button", true},
+		{[]string{`[data-label="]"] vaadin-card`}, "vaadin-card", true},
+		// Folding whitespace inside a value used to forge a whitelisted class.
+		{[]string{`[data-label=".aura- surface"]`}, ".aura-surface", false},
+		{[]string{`[data-label="a\"b"] vaadin-card`}, "vaadin-card", true},
+		// Whitespace outside the value is still insignificant.
+		{[]string{`[theme~= "success"]`}, `[theme~='success']`, true},
+	}
+	for _, c := range cases {
+		if got := SelectorChainMatches(c.chain, []string{c.token}); got != c.want {
+			t.Errorf("SelectorChainMatches(%v, %q) = %v, want %v", c.chain, c.token, got, c.want)
+		}
+	}
+}
+
+// A Java line comment ends at any line terminator, and JLS 3.4 counts a bare CR
+// as one. Line terminators are also preserved by blanking so offsets hold.
+func TestBlankJavaCommentsEndsLineCommentAtCarriageReturn(t *testing.T) {
+	in := "// comment\r@StyleSheet(Aura.STYLESHEET)\rclass App {}"
+	out := BlankJavaComments(in)
+	if len(out) != len(in) {
+		t.Fatalf("length changed: %d -> %d", len(in), len(out))
+	}
+	if !strings.Contains(out, "@StyleSheet(Aura.STYLESHEET)") {
+		t.Fatalf("code after a CR-terminated line comment was blanked: %q", out)
+	}
+	if strings.Contains(out, "comment") {
+		t.Fatalf("the comment itself survived: %q", out)
+	}
+	if strings.Count(out, "\r") != strings.Count(in, "\r") {
+		t.Fatalf("carriage returns were not preserved: %q", out)
 	}
 }
