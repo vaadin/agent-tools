@@ -22,9 +22,10 @@ box.getStyle().set("--aura-app-layout-inset", "0");      // reported: calc() bre
 Two codes carry over to Java, three stay CSS-only — see the list below. A value
 the call does not pass as a string literal (a variable, a `bind(…)` signal, a
 concatenation) still has its property name checked; only the value-dependent
-check goes quiet. `Style.remove(…)` is not an assignment and is not reported, and
-a whole style string passed to `setAttribute("style", …)` is not parsed at all —
-mistakes written that way go unreported. `.tsx` / `.ts` are not scanned, so a
+check goes quiet. `Style.remove(…)` is not an assignment and is not reported,
+code quoted in a text block (`"""…"""`) is a snippet rather than code and is not
+reported either, and a whole style string passed to `setAttribute("style", …)` is
+not parsed at all — mistakes written that way go unreported. `.tsx` / `.ts` are not scanned, so a
 Hilla view's `style={{ '--aura-…': … }}` is not covered either.
 
 ## Run it

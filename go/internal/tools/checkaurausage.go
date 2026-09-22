@@ -105,6 +105,9 @@ var javaCustomPropertyRe = regexp.MustCompile(`"(--aura-[\w-]+)"`)
 // standard properties. Style.bind(String, Signal<String>) is matched too: its
 // value is not readable here, but the property name is.
 //
+// Whitespace is allowed after the dot — Java permits it, and it is also what a
+// blanked-out comment between the dot and the method name leaves behind.
+//
 // The value group is optional, and matches only a lone literal with no escape
 // sequences in it that closes the call. Group 2 therefore either is the whole
 // value verbatim, or did not participate at all — which is how a non-literal
@@ -114,6 +117,8 @@ var javaCustomPropertyRe = regexp.MustCompile(`"(--aura-[\w-]+)"`)
 // Deliberately NOT matched:
 //
 //   - Style.remove("--aura-…"), which is not an assignment.
+//   - anything inside a text block, which is a snippet being quoted rather than
+//     code the browser will run (see the blanking pass at the call site).
 //   - setAttribute("style", "--aura-x: 0"), a raw style string: the first
 //     argument is "style", so recognizing it would mean CSS-parsing the second
 //     one for a spelling Flow code rarely uses. Its mistakes go unreported.
@@ -121,7 +126,7 @@ var javaCustomPropertyRe = regexp.MustCompile(`"(--aura-[\w-]+)"`)
 // Matched by accident: any non-Style API of the same shape, e.g.
 // config.set("--aura-…", "…"). Requiring the -- prefix on the first argument
 // keeps that rare, and such a line is worth a look either way.
-var javaStyleSetRe = regexp.MustCompile(`\.(?:set|bind)\s*\(\s*"(--[\w-]+)"\s*,\s*(?:"([^"\\]*)"\s*\))?`)
+var javaStyleSetRe = regexp.MustCompile(`\.\s*(?:set|bind)\s*\(\s*"(--[\w-]+)"\s*,\s*(?:"([^"\\]*)"\s*\))?`)
 
 // unitlessNumberRe matches a bare number with no CSS unit.
 var unitlessNumberRe = regexp.MustCompile(`^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$`)
@@ -201,12 +206,18 @@ func analyzeAuraUsage(args tool.Args) auraUsageReport {
 			for _, m := range javaCustomPropertyRe.FindAllStringSubmatch(code, -1) {
 				projectDefined[m[1]] = true
 			}
-			for _, m := range javaStyleSetRe.FindAllStringSubmatchIndex(code, -1) {
-				name := code[m[2]:m[3]]
+			// Assignments are read from a second view with text blocks blanked
+			// too: a snippet quoted in a """…""" string is documentation, and
+			// reporting it would flag a warning about wrong code as wrong code.
+			// The harvesting above deliberately still sees those names — a token
+			// named in a CSS string the project injects is one the project knows.
+			stmts := lib.BlankJavaTextBlocks(code)
+			for _, m := range javaStyleSetRe.FindAllStringSubmatchIndex(stmts, -1) {
+				name := stmts[m[2]:m[3]]
 				value := ""
 				valueKnown := m[4] >= 0 // the value group did not participate otherwise
 				if valueKnown {
-					value = code[m[4]:m[5]]
+					value = stmts[m[4]:m[5]]
 				}
 				decls = append(decls, auraDeclaration{
 					CSSDeclaration: lib.CSSDeclaration{Property: name, Value: value, Offset: m[2]},

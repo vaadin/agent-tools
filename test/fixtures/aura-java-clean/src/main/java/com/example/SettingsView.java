@@ -40,4 +40,11 @@ public class SettingsView extends VerticalLayout {
 
         add(box);
     }
+
+    /** Quoted code is not code either: a snippet in a text block never runs. */
+    static final String WHAT_NOT_TO_DO = """
+            Do not assign a computed property:
+            box.getStyle().set("--aura-background-color", "#fff");
+            box.getStyle().set("--aura-app-layout-inset", "0");
+            """;
 }

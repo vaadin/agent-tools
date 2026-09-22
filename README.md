@@ -198,6 +198,9 @@ keys on a `.set("--…", …)` / `.bind("--…", …)` call. What that means at 
   `AURA_READONLY_PROPERTY_ASSIGNED` still fires; `AURA_UNITLESS_LENGTH` has
   nothing to read and stays quiet.
 - **`Style.remove("--aura-…")`** — not an assignment, not reported.
+- **A snippet quoted in a text block** (`"""…"""`) — documentation, not code, so
+  its contents are blanked before the scan. The name harvesting above still sees
+  them: a token named in a CSS string the project injects is one it knows.
 - **`setAttribute("style", "--aura-x: 0")`** — a raw style string, deliberately
   not parsed. Mistakes written that way go unreported.
 - **A non-`Style` `.set("--…", …)`** — reported, knowingly. Requiring the `--`

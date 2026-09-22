@@ -30,6 +30,15 @@ public class DashboardView extends VerticalLayout {
         // Same, on a length property: nothing to inspect, so no unitless finding.
         box.getStyle().set("--aura-app-layout-radius", radius);
 
+        // Style.set returns Style, so assignments chain. Each one is its own
+        // match: the scan must not stop at the first.
+        box.getStyle().set("--aura-purple-text", "#618").set("--aura-orange-text", "#a50");
+
+        // Java allows whitespace after the dot, and a blanked-out comment there
+        // leaves the same gap behind. Both are still assignments.
+        box.getStyle(). set("--aura-red-text", "#900");
+        box.getStyle()./* set on purpose */set("--aura-green-text", "#090");
+
         // Not a Style at all. Knowingly reported: the call has the same shape, and
         // requiring the -- prefix keeps such a line worth a look either way.
         config.set("--aura-font-size-m", "15px");

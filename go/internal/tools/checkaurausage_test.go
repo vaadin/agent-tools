@@ -315,19 +315,48 @@ func TestAuraFlagsReadOnlyPropertyAssignedFromJava(t *testing.T) {
 		"--vaadin-text-color",     // getElement().getStyle().set(…), gated on Aura
 		"--aura-accent-color",     // non-literal value: the name still decides
 		"--aura-surface-color",    // bind(…, signal)
+		"--aura-red-text",         // whitespace between the dot and the method name
+		"--aura-green-text",       // a comment there, which blanks to whitespace
+		"--aura-purple-text",      // first of two chained set(…) calls
+		"--aura-orange-text",      // second of the same chain
 	} {
 		if !propertyReported(r.Findings, "AURA_READONLY_PROPERTY_ASSIGNED", prop) {
 			t.Errorf("expected %s to be reported as read-only", prop)
 		}
 	}
+	// Each property is assigned exactly once in the fixture, so one evidence
+	// entry apiece — a second would mean the same call was matched twice.
 	for _, f := range allByCode(r.Findings, "AURA_READONLY_PROPERTY_ASSIGNED") {
-		for _, e := range f.Evidence {
-			if !strings.HasSuffix(e.File, ".java") {
-				t.Errorf("evidence points at %s, but this fixture has no CSS", e.File)
-			}
-			if e.Line == 0 || e.Snippet == "" {
-				t.Errorf("finding %q carries an empty evidence entry: %+v", f.Message, e)
-			}
+		if len(f.Evidence) != 1 {
+			t.Errorf("finding %q carries %d evidence entries, want 1: %+v",
+				f.Message, len(f.Evidence), f.Evidence)
+			continue
+		}
+		e := f.Evidence[0]
+		if !strings.HasSuffix(e.File, "DashboardView.java") {
+			t.Errorf("evidence points at %s, but only DashboardView assigns anything", e.File)
+		}
+		if e.Line == 0 || e.Snippet == "" {
+			t.Errorf("finding %q carries an empty evidence entry: %+v", f.Message, e)
+		}
+		// The line must be the one the property name is written on, so the
+		// snippet and the line number agree.
+		if !strings.Contains(e.Snippet, "--") {
+			t.Errorf("snippet %q does not show the assignment", e.Snippet)
+		}
+	}
+}
+
+// Code quoted in a text block is a snippet being shown, not an assignment the
+// browser will ever see — including a snippet showing what not to do.
+func TestAuraIgnoresAssignmentsQuotedInJavaTextBlocks(t *testing.T) {
+	r := runAura(t, "aura-java-clean") // WHAT_NOT_TO_DO quotes two bad calls
+	if !r.OK {
+		t.Fatalf("a quoted snippet must not be reported, got: %+v", r.Findings)
+	}
+	for _, code := range []string{"AURA_READONLY_PROPERTY_ASSIGNED", "AURA_UNITLESS_LENGTH"} {
+		if found := allByCode(r.Findings, code); len(found) != 0 {
+			t.Errorf("%s fired on a text block: %+v", code, found)
 		}
 	}
 }
@@ -389,9 +418,14 @@ func TestAuraSelectorChecksSkipJavaInlineStyles(t *testing.T) {
 func TestAuraJavaDefinedPropertiesStillSuppressUnknownReads(t *testing.T) {
 	r := runAura(t, "aura-java-token")
 	if !r.OK {
-		t.Fatalf("expected ok=true, got findings: %+v", r.Findings)
+		t.Fatalf("expected ok=true (warning only), got findings: %+v", r.Findings)
 	}
-	if found := allByCode(r.Findings, "AURA_UNKNOWN_PROPERTY"); len(found) != 0 {
-		t.Fatalf("a token the project sets from Java must count as defined: %+v", found)
+	if propertyReported(r.Findings, "AURA_UNKNOWN_PROPERTY", "--aura-card-padding") {
+		t.Error("a token the project sets from Java must count as defined")
+	}
+	// The harvesting pass reads comment-blanked source, so a name that only ever
+	// appears in a Java comment defines nothing.
+	if !propertyReported(r.Findings, "AURA_UNKNOWN_PROPERTY", "--aura-card-margin") {
+		t.Error("a name only mentioned in a Java comment must not count as defined")
 	}
 }

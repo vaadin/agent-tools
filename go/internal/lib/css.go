@@ -42,21 +42,75 @@ func BlankJavaComments(src string) string {
 	return blankComments(src, true)
 }
 
+// BlankJavaTextBlocks replaces the contents of every Java text block (""" … """)
+// with spaces, preserving line terminators and the length of the input so byte
+// offsets into the result are still valid offsets into the original source.
+//
+// Code quoted inside a text block is documentation, not code: a snippet shown in
+// a string never reaches the browser. Pass the output of BlankJavaComments, so a
+// """ written inside a comment cannot open a block.
+func BlankJavaTextBlocks(src string) string {
+	out := []byte(src)
+	for i := 0; i < len(out); {
+		switch {
+		case isTextBlockDelimiter(out, i):
+			j := i + 3
+			for j < len(out) && !isTextBlockDelimiter(out, j) {
+				if out[j] == '\\' {
+					j++ // an escaped quote does not close the block
+				}
+				j++
+			}
+			blankRange(out, i+3, j)
+			if j >= len(out) {
+				i = len(out) // unterminated block: blanked to EOF
+			} else {
+				i = j + 3
+			}
+
+		case out[i] == '"' || out[i] == '\'':
+			// Step over an ordinary string or char literal, so a quote inside one
+			// cannot look like the start of a text block.
+			quote := out[i]
+			j := i + 1
+			for j < len(out) && out[j] != quote {
+				if out[j] == '\\' {
+					j++
+				}
+				j++
+			}
+			i = j + 1
+
+		default:
+			i++
+		}
+	}
+	return string(out)
+}
+
+// isTextBlockDelimiter reports whether buf has the three quotes that open or
+// close a text block at i.
+func isTextBlockDelimiter(buf []byte, i int) bool {
+	return i+2 < len(buf) && buf[i] == '"' && buf[i+1] == '"' && buf[i+2] == '"'
+}
+
+// blankRange overwrites buf[from:to] with spaces. Line terminators are kept so
+// line numbers computed against the original source still hold. Java (JLS 3.4)
+// and CSS both count a bare CR as one, so neither may be blanked away.
+func blankRange(buf []byte, from, to int) {
+	for k := from; k < to && k < len(buf); k++ {
+		if buf[k] != '\n' && buf[k] != '\r' {
+			buf[k] = ' '
+		}
+	}
+}
+
 // blankComments walks comments and string/char literals in one pass so the two
 // cannot be confused for one another. lineComments enables // (Java only — in
 // CSS a // sequence is ordinary text, as in url(https://example.com)).
 func blankComments(src string, lineComments bool) string {
 	out := []byte(src)
-	blank := func(from, to int) {
-		for k := from; k < to && k < len(out); k++ {
-			// Line terminators are kept so line numbers computed against the
-			// original source still hold. Java (JLS 3.4) and CSS both count a bare
-			// CR as one, so neither may be blanked away.
-			if out[k] != '\n' && out[k] != '\r' {
-				out[k] = ' '
-			}
-		}
-	}
+	blank := func(from, to int) { blankRange(out, from, to) }
 
 	for i := 0; i < len(out); {
 		c := out[i]

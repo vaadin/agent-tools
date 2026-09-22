@@ -12,6 +12,7 @@ public class CardView extends VerticalLayout {
         Div card = new Div();
         card.addClassName("card");
         card.getStyle().set("--aura-card-padding", "1rem");
+        // Not a definition: --aura-card-margin is only ever named in a comment.
         add(card);
     }
 }
