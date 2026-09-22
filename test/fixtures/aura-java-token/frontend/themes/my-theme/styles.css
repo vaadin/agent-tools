@@ -1,0 +1,4 @@
+/* The token is defined from Java, so reading it here is not an unknown name. */
+.card {
+  padding: var(--aura-card-padding);
+}

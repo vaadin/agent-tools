@@ -21,11 +21,16 @@ func runHook(t *testing.T, fixture, payload string) string {
 	t.Cleanup(func() { _ = os.Remove(pom) })
 
 	// Interpolate the fixture's absolute path into the payload's $FILE placeholder.
-	// A .css payload points at the fixture's stylesheet, a .java one at its
-	// Application class, so the hook's file-type gate sees the right extension.
+	// A payload that mentions a custom property is a stylesheet edit and points at
+	// the fixture's stylesheet; anything else points at its Application class, so
+	// the hook's file-type gate sees the right extension. A fixture with no
+	// stylesheet at all is a Java-only one, where even a custom property was
+	// edited into a .java file.
 	edited := filepath.Join(root, "src", "main", "java", "com", "example", "Application.java")
 	if strings.Contains(payload, "--aura-") || strings.Contains(payload, "--lumo-") {
-		edited = filepath.Join(root, "frontend", "themes", "my-theme", "styles.css")
+		if css := filepath.Join(root, "frontend", "themes", "my-theme", "styles.css"); fileExists(css) {
+			edited = css
+		}
 	}
 	in := strings.NewReader(strings.ReplaceAll(payload, "$FILE", edited))
 
@@ -98,6 +103,11 @@ func TestHookUnknownSubcommandIsSilent(t *testing.T) {
 	}
 }
 
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 func TestHookFlagsAuraMisuseAfterCSSEdit(t *testing.T) {
 	// Any .css edit counts as a styling change, so gate 2 does not apply here.
 	out := runHook(t, "aura-readonly", `{"tool_input":{"file_path":"$FILE","content":"--aura-background-color: #fff;"}}`)
@@ -114,6 +124,20 @@ func TestHookStaysSilentOnCleanAuraProject(t *testing.T) {
 	out := runHook(t, "aura-clean", `{"tool_input":{"file_path":"$FILE","content":"--aura-base-size: 16;"}}`)
 	if out != "" {
 		t.Fatalf("expected silence for a correctly themed project, got: %q", out)
+	}
+}
+
+// An inline style set from a Flow view is the same mistake as the stylesheet
+// version, and it reaches the hook through the existing .java gate — the edit
+// mentions getStyle(, so gate 2 passes without any hook change.
+func TestHookFlagsAuraMisuseAfterJavaInlineStyleEdit(t *testing.T) {
+	out := runHook(t, "aura-java-inline",
+		`{"tool_input":{"file_path":"$FILE","new_string":"box.getStyle().set(\"--aura-background-color\", \"#fff\");"}}`)
+	if !strings.Contains(out, "AURA_READONLY_PROPERTY_ASSIGNED") {
+		t.Fatalf("expected the Aura usage check to speak after a Java inline-style edit, got: %q", out)
+	}
+	if !strings.Contains(out, "DashboardView.java") {
+		t.Fatalf("expected the finding to point at the Java source, got: %q", out)
 	}
 }
 

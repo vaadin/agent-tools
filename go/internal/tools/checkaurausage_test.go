@@ -302,3 +302,96 @@ func TestAuraUnitlessSeesThroughImportantAndStrings(t *testing.T) {
 		}
 	}
 }
+
+// --- Java inline styles (Style.set / Style.bind) -----------------------------
+
+func TestAuraFlagsReadOnlyPropertyAssignedFromJava(t *testing.T) {
+	r := runAura(t, "aura-java-inline")
+	if r.OK {
+		t.Fatal("expected ok=false")
+	}
+	for _, prop := range []string{
+		"--aura-background-color", // getStyle().set(…)
+		"--vaadin-text-color",     // getElement().getStyle().set(…), gated on Aura
+		"--aura-accent-color",     // non-literal value: the name still decides
+		"--aura-surface-color",    // bind(…, signal)
+	} {
+		if !propertyReported(r.Findings, "AURA_READONLY_PROPERTY_ASSIGNED", prop) {
+			t.Errorf("expected %s to be reported as read-only", prop)
+		}
+	}
+	for _, f := range allByCode(r.Findings, "AURA_READONLY_PROPERTY_ASSIGNED") {
+		for _, e := range f.Evidence {
+			if !strings.HasSuffix(e.File, ".java") {
+				t.Errorf("evidence points at %s, but this fixture has no CSS", e.File)
+			}
+			if e.Line == 0 || e.Snippet == "" {
+				t.Errorf("finding %q carries an empty evidence entry: %+v", f.Message, e)
+			}
+		}
+	}
+}
+
+func TestAuraFlagsUnitlessLengthFromJava(t *testing.T) {
+	r := runAura(t, "aura-java-inline")
+	found := allByCode(r.Findings, "AURA_UNITLESS_LENGTH")
+	if len(found) != 1 {
+		t.Fatalf("expected 1 unitless finding, got %d: %+v", len(found), found)
+	}
+	if !propertyReported(r.Findings, "AURA_UNITLESS_LENGTH", "--aura-app-layout-inset") {
+		t.Errorf("expected --aura-app-layout-inset to be reported as unitless")
+	}
+	// The value of set("--aura-app-layout-radius", radius) cannot be read, so the
+	// check has nothing to judge and must not guess.
+	if propertyReported(r.Findings, "AURA_UNITLESS_LENGTH", "--aura-app-layout-radius") {
+		t.Error("a non-literal value must not be reported as unitless")
+	}
+}
+
+// Requiring the -- prefix on the first argument makes a non-Style .set(…) rare
+// rather than impossible. The line is reported; this pins that decision.
+func TestAuraReportsLookalikeSetCallsOnNonStyleObjects(t *testing.T) {
+	r := runAura(t, "aura-java-inline")
+	if !propertyReported(r.Findings, "AURA_READONLY_PROPERTY_ASSIGNED", "--aura-font-size-m") {
+		t.Fatal("expected config.set(\"--aura-font-size-m\", …) to be reported")
+	}
+}
+
+func TestAuraCorrectJavaInlineStylesHaveNoFindings(t *testing.T) {
+	r := runAura(t, "aura-java-clean")
+	if !r.OK {
+		t.Fatalf("expected ok=true, got findings: %+v", r.Findings)
+	}
+	if len(r.Findings) != 0 {
+		t.Fatalf("expected no findings, got %d: %+v", len(r.Findings), r.Findings)
+	}
+}
+
+// The two selector checks need the class names on the element, which Java puts
+// in a different statement. They stay CSS-only rather than warning about the
+// documented idiom.
+func TestAuraSelectorChecksSkipJavaInlineStyles(t *testing.T) {
+	for _, fixture := range []string{"aura-java-clean", "aura-java-inline"} {
+		r := runAura(t, fixture)
+		for _, code := range []string{
+			"AURA_SURFACE_PROPERTY_WITHOUT_SURFACE_CLASS",
+			"AURA_ACCENT_SURFACE_WITHOUT_ACCENT_CLASS",
+		} {
+			if found := allByCode(r.Findings, code); len(found) != 0 {
+				t.Errorf("%s: %s must not fire on a Java inline style: %+v", fixture, code, found)
+			}
+		}
+	}
+}
+
+// Harvesting a project's own --aura-* names from Java suppresses
+// AURA_UNKNOWN_PROPERTY; reporting an assignment must not have disturbed it.
+func TestAuraJavaDefinedPropertiesStillSuppressUnknownReads(t *testing.T) {
+	r := runAura(t, "aura-java-token")
+	if !r.OK {
+		t.Fatalf("expected ok=true, got findings: %+v", r.Findings)
+	}
+	if found := allByCode(r.Findings, "AURA_UNKNOWN_PROPERTY"); len(found) != 0 {
+		t.Fatalf("a token the project sets from Java must count as defined: %+v", found)
+	}
+}
