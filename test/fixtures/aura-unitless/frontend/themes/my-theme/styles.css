@@ -11,3 +11,10 @@ html {
   --aura-surface-opacity: 0.5;
   --aura-font-weight-regular: 400;
 }
+
+/* !important is case-insensitive and allows whitespace after the bang. */
+.a { --aura-app-layout-border-width: 0 !IMPORTANT; }
+.b { --aura-item-overlay-padding-inline: 0 ! important; }
+
+/* A comment marker inside a string must not swallow the rest of the file. */
+.c { content: "/*"; --aura-item-overlay-padding-block: 0; }

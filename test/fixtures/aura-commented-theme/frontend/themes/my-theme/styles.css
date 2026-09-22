@@ -1,0 +1,7 @@
+/* @import "@vaadin/aura/aura.css"; */
+
+html {
+  /* No base theme is actually loaded, so the --vaadin-* properties Aura
+     reassigns must not be reported here. */
+  --vaadin-text-color: red;
+}

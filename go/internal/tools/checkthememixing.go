@@ -156,43 +156,54 @@ func analyzeThemeMixing(args tool.Args) themeMixingReport {
 		content := string(b)
 		ext := strings.ToLower(filepath.Ext(file))
 
+		// Detection runs over a copy with comments blanked, so commented-out code
+		// is not mistaken for a loaded theme. Blanking preserves byte offsets, so
+		// evidence line numbers and snippets still come from the original.
+		code := content
 		switch ext {
 		case ".java":
-			for _, m := range javaStyleSheetRe.FindAllStringSubmatchIndex(content, -1) {
-				theme := strings.ToLower(content[m[2]:m[3]])
+			code = lib.BlankJavaComments(content)
+		case ".css":
+			code = lib.BlankComments(content)
+		}
+
+		switch ext {
+		case ".java":
+			for _, m := range javaStyleSheetRe.FindAllStringSubmatchIndex(code, -1) {
+				theme := strings.ToLower(code[m[2]:m[3]])
 				idx := m[0]
 				loaded[theme] = append(loaded[theme],
 					lib.NewEvidence(rel(file), lineOf(content, idx), snippetAt(content, idx)))
 			}
-			for _, m := range javaLegacyThemeRe.FindAllStringIndex(content, -1) {
+			for _, m := range javaLegacyThemeRe.FindAllStringIndex(code, -1) {
 				idx := m[0]
 				legacyTheme = append(legacyTheme,
 					lib.NewEvidence(rel(file), lineOf(content, idx), snippetAt(content, idx)))
 			}
 			// Report at most one LumoUtility hit per file to keep evidence tidy.
-			if loc := javaLumoUtilityRe.FindStringIndex(content); loc != nil {
+			if loc := javaLumoUtilityRe.FindStringIndex(code); loc != nil {
 				idx := loc[0]
 				lumoUtility = append(lumoUtility,
 					lib.NewEvidence(rel(file), lineOf(content, idx), snippetAt(content, idx)))
 			}
 		case ".css":
-			for _, m := range cssImportAuraRe.FindAllStringIndex(content, -1) {
+			for _, m := range cssImportAuraRe.FindAllStringIndex(code, -1) {
 				idx := m[0]
 				loaded["aura"] = append(loaded["aura"],
 					lib.NewEvidence(rel(file), lineOf(content, idx), snippetAt(content, idx)))
 			}
-			for _, m := range cssImportLumoRe.FindAllStringIndex(content, -1) {
+			for _, m := range cssImportLumoRe.FindAllStringIndex(code, -1) {
 				idx := m[0]
 				loaded["lumo"] = append(loaded["lumo"],
 					lib.NewEvidence(rel(file), lineOf(content, idx), snippetAt(content, idx)))
 			}
 			// Record only the first token match per file per prefix to keep evidence tidy.
-			if loc := auraTokenRe.FindStringIndex(content); loc != nil {
+			if loc := auraTokenRe.FindStringIndex(code); loc != nil {
 				idx := loc[0]
 				tokens["aura"] = append(tokens["aura"],
 					lib.NewEvidence(rel(file), lineOf(content, idx), snippetAt(content, idx)))
 			}
-			if loc := lumoTokenRe.FindStringIndex(content); loc != nil {
+			if loc := lumoTokenRe.FindStringIndex(code); loc != nil {
 				idx := loc[0]
 				tokens["lumo"] = append(tokens["lumo"],
 					lib.NewEvidence(rel(file), lineOf(content, idx), snippetAt(content, idx)))

@@ -83,6 +83,10 @@ var javaCustomPropertyRe = regexp.MustCompile(`"(--aura-[\w-]+)"`)
 // unitlessNumberRe matches a bare number with no CSS unit.
 var unitlessNumberRe = regexp.MustCompile(`^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$`)
 
+// importantRe matches a trailing !important. CSS lets it be written in any case
+// and with whitespace after the bang, so "0 ! IMPORTANT" must strip down to "0".
+var importantRe = regexp.MustCompile(`(?i)\s*!\s*important\s*$`)
+
 // auraDeclaration is one custom-property declaration together with where it came
 // from, so a finding can point at it.
 type auraDeclaration struct {
@@ -135,22 +139,26 @@ func analyzeAuraUsage(args tool.Args) auraUsageReport {
 
 		switch strings.ToLower(filepath.Ext(file)) {
 		case ".java":
-			for _, m := range javaStyleSheetRe.FindAllStringSubmatch(content, -1) {
+			// Scan with comments blanked, so a commented-out @StyleSheet does not
+			// look like a loaded theme. Blanking preserves byte offsets.
+			code := lib.BlankJavaComments(content)
+			for _, m := range javaStyleSheetRe.FindAllStringSubmatch(code, -1) {
 				loaded[strings.ToLower(m[1])] = true
 			}
-			for _, m := range javaCustomPropertyRe.FindAllStringSubmatch(content, -1) {
+			for _, m := range javaCustomPropertyRe.FindAllStringSubmatch(code, -1) {
 				projectDefined[m[1]] = true
 			}
 
 		case ".css":
-			if cssImportAuraRe.MatchString(content) {
+			css := lib.BlankComments(content)
+			if cssImportAuraRe.MatchString(css) {
 				loaded["aura"] = true
 			}
-			if cssImportLumoRe.MatchString(content) {
+			if cssImportLumoRe.MatchString(css) {
 				loaded["lumo"] = true
 			}
 
-			cssDecls, cssReads := lib.ParseCSS(lib.BlankComments(content))
+			cssDecls, cssReads := lib.ParseCSS(css)
 			for _, d := range cssDecls {
 				projectDefined[d.Property] = true
 				decls = append(decls, auraDeclaration{
@@ -302,7 +310,7 @@ func auraUnitlessFindings(decls []auraDeclaration) []lib.Finding {
 		if !auraLengthProperties[d.Property] {
 			continue
 		}
-		value := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(d.Value), "!important"))
+		value := strings.TrimSpace(importantRe.ReplaceAllString(d.Value, ""))
 		if !unitlessNumberRe.MatchString(value) {
 			continue
 		}

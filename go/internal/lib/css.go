@@ -28,27 +28,71 @@ type CSSVarRead struct {
 // BlankComments replaces every /* … */ comment with spaces, preserving the
 // length of the input (and the newlines inside the comment) so byte offsets into
 // the result are still valid offsets into the original source.
+//
+// String literals are skipped, so a comment marker inside one — content: "/*" —
+// does not start a comment; and quotes inside a comment do not start a string.
 func BlankComments(css string) string {
-	out := []byte(css)
-	for i := 0; i < len(out)-1; {
-		if out[i] == '/' && out[i+1] == '*' {
+	return blankComments(css, false)
+}
+
+// BlankJavaComments is BlankComments for Java sources: it also blanks // line
+// comments, and skips char literals as well as strings. Offsets are preserved
+// the same way.
+func BlankJavaComments(src string) string {
+	return blankComments(src, true)
+}
+
+// blankComments walks comments and string/char literals in one pass so the two
+// cannot be confused for one another. lineComments enables // (Java only — in
+// CSS a // sequence is ordinary text, as in url(https://example.com)).
+func blankComments(src string, lineComments bool) string {
+	out := []byte(src)
+	blank := func(from, to int) {
+		for k := from; k < to && k < len(out); k++ {
+			if out[k] != '\n' {
+				out[k] = ' '
+			}
+		}
+	}
+
+	for i := 0; i < len(out); {
+		c := out[i]
+
+		switch {
+		case c == '/' && i+1 < len(out) && out[i+1] == '*':
 			j := i + 2
-			for j < len(out)-1 && !(out[j] == '*' && out[j+1] == '/') {
+			for j+1 < len(out) && !(out[j] == '*' && out[j+1] == '/') {
 				j++
 			}
 			end := j + 2
 			if end > len(out) {
-				end = len(out)
+				end = len(out) // unterminated comment: blank to EOF
 			}
-			for k := i; k < end; k++ {
-				if out[k] != '\n' {
-					out[k] = ' '
-				}
-			}
+			blank(i, end)
 			i = end
-			continue
+
+		case lineComments && c == '/' && i+1 < len(out) && out[i+1] == '/':
+			j := i
+			for j < len(out) && out[j] != '\n' {
+				j++
+			}
+			blank(i, j)
+			i = j
+
+		case c == '"' || c == '\'':
+			// Step over the literal so its contents are never read as structure.
+			j := i + 1
+			for j < len(out) && out[j] != c {
+				if out[j] == '\\' {
+					j++
+				}
+				j++
+			}
+			i = j + 1
+
+		default:
+			i++
 		}
-		i++
 	}
 	return string(out)
 }
@@ -216,8 +260,12 @@ func hasPrefixFold(s, lowerPrefix string) bool {
 	return true
 }
 
+// isCSSIdentByte reports whether b can appear in a CSS identifier. Every byte at
+// or above 0x80 counts: CSS identifiers may contain non-ASCII characters, and
+// treating a UTF-8 lead or continuation byte as a boundary would both truncate
+// a custom property name and let one class name match a longer one.
 func isCSSIdentByte(b byte) bool {
-	return b == '-' || b == '_' ||
+	return b == '-' || b == '_' || b >= 0x80 ||
 		(b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
 }
 
@@ -227,15 +275,55 @@ func isCSSIdentByte(b byte) bool {
 // like "::part(overlay)" matches anywhere, so it also matches
 // "vaadin-dialog::part(overlay)".
 func SelectorChainMatches(chain []string, tokens []string) bool {
+	normalized := make([]string, len(tokens))
+	for i, tok := range tokens {
+		normalized[i] = normalizeSelector(tok)
+	}
 	for _, sel := range chain {
-		lower := strings.ToLower(sel)
-		for _, tok := range tokens {
-			if containsSelectorToken(lower, strings.ToLower(tok)) {
+		hay := normalizeSelector(sel)
+		for _, tok := range normalized {
+			if containsSelectorToken(hay, tok) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// normalizeSelector folds away the spellings CSS treats as equivalent, so a
+// token written one way still matches a selector written another: case,
+// "double" vs 'single' attribute quotes, and whitespace inside an attribute
+// selector ([theme~= "success"] == [theme~='success']).
+//
+// Whitespace OUTSIDE brackets is left alone: there it is the descendant
+// combinator, and collapsing it would weld two identifiers into one, so
+// "vaadin-notification-card vaadin-button" would stop mentioning vaadin-button.
+func normalizeSelector(sel string) string {
+	var b strings.Builder
+	b.Grow(len(sel))
+	inBrackets := 0
+	for i := 0; i < len(sel); i++ {
+		c := sel[i]
+		switch {
+		case c == '[':
+			inBrackets++
+			b.WriteByte(c)
+		case c == ']':
+			if inBrackets > 0 {
+				inBrackets--
+			}
+			b.WriteByte(c)
+		case inBrackets > 0 && (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'):
+			// dropped
+		case c == '"':
+			b.WriteByte('\'')
+		case c >= 'A' && c <= 'Z':
+			b.WriteByte(c + 'a' - 'A')
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 func containsSelectorToken(haystack, token string) bool {

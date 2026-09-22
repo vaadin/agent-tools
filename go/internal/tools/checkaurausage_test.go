@@ -168,9 +168,11 @@ func TestAuraFlagsUnitlessLength(t *testing.T) {
 	if r.OK {
 		t.Fatal("expected ok=false")
 	}
+	// One per offending property: inset, radius, border-width, and the two
+	// item-overlay paddings.
 	found := allByCode(r.Findings, "AURA_UNITLESS_LENGTH")
-	if len(found) != 2 {
-		t.Fatalf("expected 2 unitless findings, got %d: %+v", len(found), found)
+	if len(found) != 5 {
+		t.Fatalf("expected 5 unitless findings, got %d: %+v", len(found), found)
 	}
 	for _, f := range found {
 		if f.Level != "error" {
@@ -268,6 +270,35 @@ func TestAuraCuratedListsAreSubsetsOfTheKnownProperties(t *testing.T) {
 	for _, name := range append(append([]string{}, auraSurfaceProperties...), auraAccentInputProperties...) {
 		if !auraKnownProperties[name] {
 			t.Errorf("%s is checked but is not a known Aura property", name)
+		}
+	}
+}
+
+// Commented-out theme loading must not activate the Aura-gated checks.
+func TestAuraIgnoresCommentedOutThemeLoading(t *testing.T) {
+	r := runAura(t, "aura-commented-theme")
+	if len(r.ThemesLoaded) != 0 {
+		t.Fatalf("themesLoaded = %v, want empty — the @StyleSheet/@import are commented out", r.ThemesLoaded)
+	}
+	if propertyReported(r.Findings, "AURA_READONLY_PROPERTY_ASSIGNED", "--vaadin-text-color") {
+		t.Fatal("--vaadin-* must not be reported when no base theme is loaded")
+	}
+	if !r.OK {
+		t.Fatalf("expected ok=true, got findings: %+v", r.Findings)
+	}
+}
+
+// !important is case-insensitive and allows whitespace, and a comment marker
+// inside a string literal must not hide the declarations after it.
+func TestAuraUnitlessSeesThroughImportantAndStrings(t *testing.T) {
+	r := runAura(t, "aura-unitless")
+	for _, prop := range []string{
+		"--aura-app-layout-border-width",     // 0 !IMPORTANT
+		"--aura-item-overlay-padding-inline", // 0 ! important
+		"--aura-item-overlay-padding-block",  // after a content: "/*" string
+	} {
+		if !propertyReported(r.Findings, "AURA_UNITLESS_LENGTH", prop) {
+			t.Errorf("expected %s to be reported as unitless", prop)
 		}
 	}
 }
