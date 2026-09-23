@@ -157,25 +157,67 @@ Exit codes: `0` no error-level findings · `1` mixing detected · `2` usage erro
 
 ### `check-aura-usage`
 
-Validates how a project's CSS uses the **Aura** theme's custom properties. Doc
-search can tell an agent the rule; this tells it that the stylesheet it just
-generated breaks the rule.
+Validates how a project uses the **Aura** theme's custom properties — in its CSS,
+and in the inline styles its Java sources set through `Style`. Doc search can
+tell an agent the rule; this tells it that the stylesheet, or the Flow view, it
+just generated breaks the rule.
 
 ```shell
 bin/vaadin-agent-tools check-aura-usage ./my-project
 bin/vaadin-agent-tools check-aura-usage ./my-project --json
 ```
 
-| Code | Level | What it catches |
-| --- | --- | --- |
-| `AURA_READONLY_PROPERTY_ASSIGNED` | error | A property Aura computes is assigned. Most are defined with `light-dark(…)`, so assigning one value discards *both* color-scheme values and dark mode stops working. The message names the customizable property to set instead. The two font stacks (`--aura-font-family-system`, `--aura-font-family-instrument-sans`) are a warning: redefining them is wrong usage rather than a dark-mode bug. |
-| `AURA_SURFACE_PROPERTY_WITHOUT_SURFACE_CLASS` | warning | `--aura-surface-level` / `--aura-surface-opacity` set on a selector that carries neither `aura-surface` nor `aura-surface-solid` and is not one of the built-in components that use the surface color. Silently does nothing. |
-| `AURA_ACCENT_SURFACE_WITHOUT_ACCENT_CLASS` | warning | `--aura-accent-color-light` / `-dark` set on a selector Aura does not recompute the accent-derived colors on, so `--aura-accent-surface` keeps its inherited tint. Silently does nothing. |
-| `AURA_UNITLESS_LENGTH` | error | An Aura length property given a bare number (`--aura-app-layout-inset: 0`). It feeds a `calc()`, so it needs a unit even at zero. |
-| `AURA_UNKNOWN_PROPERTY` | warning | `var()` reads an `--aura-*` property that neither the theme nor the project defines — a typo or a hallucinated token. Fires on *reads* only; a project may define its own `--aura-`-prefixed properties. |
+| Code | Level | Scans | What it catches |
+| --- | --- | --- | --- |
+| `AURA_READONLY_PROPERTY_ASSIGNED` | error | CSS + Java | A property Aura computes is assigned. Most are defined with `light-dark(…)`, so assigning one value discards *both* color-scheme values and dark mode stops working. The message names the customizable property to set instead. The two font stacks (`--aura-font-family-system`, `--aura-font-family-instrument-sans`) are a warning: redefining them is wrong usage rather than a dark-mode bug. |
+| `AURA_SURFACE_PROPERTY_WITHOUT_SURFACE_CLASS` | warning | CSS | `--aura-surface-level` / `--aura-surface-opacity` set on a selector that carries neither `aura-surface` nor `aura-surface-solid` and is not one of the built-in components that use the surface color. Silently does nothing. |
+| `AURA_ACCENT_SURFACE_WITHOUT_ACCENT_CLASS` | warning | CSS | `--aura-accent-color-light` / `-dark` set on a selector Aura does not recompute the accent-derived colors on, so `--aura-accent-surface` keeps its inherited tint. Silently does nothing. |
+| `AURA_UNITLESS_LENGTH` | error | CSS + Java | An Aura length property given a bare number (`--aura-app-layout-inset: 0`). It feeds a `calc()`, so it needs a unit even at zero. |
+| `AURA_UNKNOWN_PROPERTY` | warning | CSS | `var()` reads an `--aura-*` property that neither the theme nor the project defines — a typo or a hallucinated token. Fires on *reads* only; a project may define its own `--aura-`-prefixed properties. |
 
 Exit codes: `0` no error-level findings · `1` error-level findings · `2` usage
 error.
+
+#### Java inline styles
+
+The same mistakes are as reachable from a Flow view as from a stylesheet, so the
+two checks that need no selector context also run over what `.java` sources
+assign through `com.vaadin.flow.dom.Style`:
+
+```java
+box.getStyle().set("--aura-background-color", "#fff");   // dark mode silently breaks
+box.getStyle().set("--aura-app-layout-inset", "0");      // calc() silently breaks
+```
+
+`Style.set(String, String)` is the only `Style` member that can assign a custom
+property — the rest are typed setters for standard properties — so the matcher
+keys on a `.set("--…", …)` / `.bind("--…", …)` call. What that means at the edges:
+
+- **Non-literal value** (`set("--aura-accent-color", accent)`, `bind(…, signal)`,
+  `set(…, "0" + unit)`) — the property name is still checked, so
+  `AURA_READONLY_PROPERTY_ASSIGNED` still fires; `AURA_UNITLESS_LENGTH` has
+  nothing to read and stays quiet.
+- **`Style.remove("--aura-…")`** — not an assignment, not reported.
+- **A snippet quoted in a text block** (`"""…"""`) — documentation, not code, so
+  its contents are blanked before the scan. The name harvesting above still sees
+  them: a token named in a CSS string the project injects is one it knows.
+- **`setAttribute("style", "--aura-x: 0")`** — a raw style string, deliberately
+  not parsed. Mistakes written that way go unreported.
+- **A non-`Style` `.set("--…", …)`** — reported, knowingly. Requiring the `--`
+  prefix makes it rare, and the line is worth a look either way.
+
+The three remaining codes stay CSS-only, and not by omission:
+`AURA_SURFACE_PROPERTY_WITHOUT_SURFACE_CLASS` and
+`AURA_ACCENT_SURFACE_WITHOUT_ACCENT_CLASS` need the class names on the *same*
+element, which the documented Java idiom puts in a different statement
+(`addClassNames(…)` on a local variable, then `getStyle().set(…)`); correlating
+those means tracking a variable through a method body, and getting it wrong means
+false positives on exactly the correct code. `AURA_UNKNOWN_PROPERTY` fires on
+*reads*, and `Style.set` is a write.
+
+Hilla/React views are a third surface with the same failure mode
+(`<div style={{ '--aura-surface-level': 2 }} />`); `.tsx` / `.ts` are not walked
+yet.
 
 #### The Aura property tables
 

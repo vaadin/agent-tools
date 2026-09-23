@@ -1,6 +1,6 @@
 {
   "name": "vaadin-agent-tools",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Vaadin tools for AI agents: inspect and validate Vaadin projects with a self-contained native CLI.",
   "author": {
     "name": "Vaadin",

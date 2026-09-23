@@ -245,3 +245,60 @@ func TestBlankJavaCommentsEndsLineCommentAtCarriageReturn(t *testing.T) {
 		t.Fatalf("carriage returns were not preserved: %q", out)
 	}
 }
+
+func TestBlankJavaTextBlocksBlanksOnlyTheContents(t *testing.T) {
+	src := "String a = \"keep me\";\n" +
+		"String doc = \"\"\"\n" +
+		"    box.getStyle().set(\"--aura-background-color\", \"#fff\");\n" +
+		"    \"\"\";\n" +
+		"String b = \"keep me too\";\n"
+	got := BlankJavaTextBlocks(src)
+
+	if len(got) != len(src) {
+		t.Fatalf("length changed: %d → %d", len(src), len(got))
+	}
+	if strings.Count(got, "\n") != strings.Count(src, "\n") {
+		t.Fatal("newlines must survive so line numbers still hold")
+	}
+	if strings.Contains(got, "--aura-background-color") {
+		t.Errorf("text-block contents were not blanked: %q", got)
+	}
+	for _, keep := range []string{`"keep me"`, `"keep me too"`} {
+		if !strings.Contains(got, keep) {
+			t.Errorf("ordinary string literal %s was blanked away: %q", keep, got)
+		}
+	}
+}
+
+// A quote inside an ordinary literal must not look like the start of a block,
+// and an empty string ("" — two quotes, not three) is not one either.
+func TestBlankJavaTextBlocksSkipsOrdinaryLiterals(t *testing.T) {
+	src := `String quote = "\"\"\""; String empty = ""; String tail = "--aura-red";`
+	if got := BlankJavaTextBlocks(src); got != src {
+		t.Fatalf("nothing should have been blanked:\n got %q\nwant %q", got, src)
+	}
+}
+
+// The comment pass and the text-block pass must agree about where a block ends.
+// When the comment pass lexes """ as ordinary strings, a quote inside the block
+// lets a // there erase the closing delimiter — and the text-block pass then
+// blanks the real code after it as an unterminated block.
+func TestBlankJavaCommentsKeepsTextBlocksIntact(t *testing.T) {
+	src := "String doc = \"\"\"\n\" // \"\"\";\nstyle.set(\"--aura-red-text\", \"#900\");\n"
+	got := BlankJavaTextBlocks(BlankJavaComments(src))
+	if !strings.Contains(got, `set("--aura-red-text", "#900")`) {
+		t.Fatalf("the statement after the text block was blanked away: %q", got)
+	}
+}
+
+// An unterminated block blanks to EOF rather than looping or panicking.
+func TestBlankJavaTextBlocksHandlesUnterminatedBlock(t *testing.T) {
+	src := "String doc = \"\"\"\n  set(\"--aura-red-text\", \"#900\");\n"
+	got := BlankJavaTextBlocks(src)
+	if len(got) != len(src) {
+		t.Fatalf("length changed: %d → %d", len(src), len(got))
+	}
+	if strings.Contains(got, "--aura-red-text") {
+		t.Errorf("an unterminated block must be blanked to EOF: %q", got)
+	}
+}
