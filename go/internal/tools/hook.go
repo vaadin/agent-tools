@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/vaadin/agent-tools/internal/lib"
 	"github.com/vaadin/agent-tools/internal/tool"
@@ -21,9 +22,9 @@ import (
 //
 //	vaadin-agent-tools hook post-tool-use
 //
-// It reads a Claude Code PostToolUse payload from stdin and, when the edit that
-// just happened actually touched Vaadin styling, runs the styling checks
-// (check-theme-mixing and check-aura-usage) against the edited file's own
+// It reads a Claude Code or Codex PostToolUse payload from stdin and, when the
+// edit that just happened actually touched Vaadin styling, runs the styling
+// checks (check-theme-mixing and check-aura-usage) against each edited file's own
 // project. Only when one of them reports an error-level finding does it print a
 // PostToolUse response asking the agent to fix it. In every other case it stays
 // completely silent. It always exits 0 so a styling edit is never blocked by
@@ -47,9 +48,12 @@ func RunHook(args []string, stdin io.Reader, stdout io.Writer, cwd string) int {
 }
 
 // postToolUsePayload is the subset of the PostToolUse stdin JSON this hook reads.
-// tool_input's shape varies by tool: Write has `content`, Edit has `new_string`,
-// MultiEdit has `edits[].new_string`.
+// tool_input's shape varies by tool. Claude Code's tools carry an absolute
+// `file_path`: Write has `content`, Edit has `new_string`, MultiEdit has
+// `edits[].new_string`. Codex edits through apply_patch, whose only input is
+// `command`, the raw patch text, with paths relative to `cwd`.
 type postToolUsePayload struct {
+	Cwd       string `json:"cwd"`
 	ToolInput struct {
 		FilePath  string `json:"file_path"`
 		NewString string `json:"new_string"`
@@ -57,7 +61,14 @@ type postToolUsePayload struct {
 		Edits     []struct {
 			NewString string `json:"new_string"`
 		} `json:"edits"`
+		Command string `json:"command"`
 	} `json:"tool_input"`
+}
+
+// fileEdit is one file an edit touched, with the text the edit introduced there.
+type fileEdit struct {
+	path       string
+	introduced string
 }
 
 // postToolUseResponse is the PostToolUse hook output contract. additionalContext
@@ -95,43 +106,39 @@ func runPostToolUseHook(stdin io.Reader, stdout io.Writer, cwd string) int {
 		return 0
 	}
 
-	file := p.ToolInput.FilePath
-	if file == "" {
-		return 0
+	// Codex patch paths are relative to the session's directory, which the
+	// payload names; it is also where Codex starts the hook, so this only matters
+	// if the two ever differ.
+	if filepath.IsAbs(p.Cwd) {
+		cwd = p.Cwd
 	}
 
 	// --- Gate 1: file type, and for .java, gate 2: the edit touched styling. ---
-	switch strings.ToLower(filepath.Ext(file)) {
-	case ".css":
-		// Any CSS edit is a styling change.
-	case ".java":
-		var changed strings.Builder
-		changed.WriteString(p.ToolInput.NewString)
-		changed.WriteByte('\n')
-		changed.WriteString(p.ToolInput.Content)
-		for _, e := range p.ToolInput.Edits {
-			changed.WriteByte('\n')
-			changed.WriteString(e.NewString)
+	// Each check is scoped to the edited file's own project. One Codex patch can
+	// touch files in several projects, so collect each distinct project once.
+	var projects []string
+	seen := map[string]bool{}
+	for _, e := range editsFrom(p) {
+		if !touchesStyling(e) {
+			continue
 		}
-		if !javaStylingRe.MatchString(changed.String()) {
-			return 0
+		if project := projectRootFor(e.path, cwd); !seen[project] {
+			seen[project] = true
+			projects = append(projects, project)
 		}
-	default:
-		return 0
 	}
-
-	// Scope the check to the edited file's own project.
-	project := projectRootFor(file, cwd)
 
 	// --- Gate 3: only speak when a check finds an error-level problem. ---
-	args := tool.Args{Positionals: []string{project}, JSON: true, Cwd: cwd}
 	var sections []string
-
-	if r := analyzeThemeMixing(args); r.UsageError == "" && !r.OK {
-		sections = append(sections, envelopeFor("check-theme-mixing", r.OK, r))
-	}
-	if r := analyzeAuraUsage(args); r.UsageError == "" && !r.OK {
-		sections = append(sections, envelopeFor("check-aura-usage", r.OK, r))
+	for _, project := range projects {
+		found := checkProject(project, cwd)
+		if len(found) == 0 {
+			continue
+		}
+		if len(projects) > 1 {
+			sections = append(sections, "Project: "+project)
+		}
+		sections = append(sections, found...)
 	}
 	if len(sections) == 0 {
 		return 0
@@ -151,6 +158,127 @@ func runPostToolUseHook(stdin io.Reader, stdout io.Writer, cwd string) int {
 	_, _ = stdout.Write(out)
 	_, _ = io.WriteString(stdout, "\n")
 	return 0
+}
+
+// editsFrom returns the files the tool call edited. A Claude Code edit names one
+// file; a Codex apply_patch can add or update several.
+func editsFrom(p postToolUsePayload) []fileEdit {
+	in := p.ToolInput
+	if in.FilePath != "" {
+		var changed strings.Builder
+		changed.WriteString(in.NewString)
+		changed.WriteByte('\n')
+		changed.WriteString(in.Content)
+		for _, e := range in.Edits {
+			changed.WriteByte('\n')
+			changed.WriteString(e.NewString)
+		}
+		return []fileEdit{{path: in.FilePath, introduced: changed.String()}}
+	}
+	if in.Command != "" {
+		return parseApplyPatch(in.Command)
+	}
+	return nil
+}
+
+// touchesStyling applies gates 1 and 2 to one edited file.
+func touchesStyling(e fileEdit) bool {
+	switch strings.ToLower(filepath.Ext(e.path)) {
+	case ".css":
+		// Any CSS edit is a styling change.
+		return true
+	case ".java":
+		return javaStylingRe.MatchString(e.introduced)
+	default:
+		return false
+	}
+}
+
+// checkProject runs the styling checks against one project and returns the
+// envelope of each check that found an error-level problem.
+func checkProject(project, cwd string) []string {
+	args := tool.Args{Positionals: []string{project}, JSON: true, Cwd: cwd}
+	var sections []string
+	if r := analyzeThemeMixing(args); r.UsageError == "" && !r.OK {
+		sections = append(sections, envelopeFor("check-theme-mixing", r.OK, r))
+	}
+	if r := analyzeAuraUsage(args); r.UsageError == "" && !r.OK {
+		sections = append(sections, envelopeFor("check-aura-usage", r.OK, r))
+	}
+	return sections
+}
+
+// The apply_patch envelope markers, as codex-rs/apply-patch/src/parser.rs spells
+// them.
+const (
+	patchBeginMarker  = "*** Begin Patch"
+	patchEndMarker    = "*** End Patch"
+	patchAddMarker    = "*** Add File: "
+	patchDeleteMarker = "*** Delete File: "
+	patchUpdateMarker = "*** Update File: "
+	patchMoveToMarker = "*** Move to: "
+)
+
+// parseApplyPatch returns the files a Codex apply_patch envelope adds or updates,
+// each with the text its `+` lines introduce. It reads the envelope the way
+// Codex's own parser does, including its leniency about whitespace around the
+// markers and a heredoc wrapper around the whole patch. Unlike that parser it
+// never fails: Codex has already applied the patch by the time this hook runs,
+// so a line it does not recognize is skipped. A deleted file introduces nothing
+// and is left out. A moved file is reported at its new path.
+func parseApplyPatch(patch string) []fileEdit {
+	type patchedFile struct {
+		path  string
+		added []string
+	}
+	var files []patchedFile
+	const (
+		outside = iota // before the first hunk, or in a deleted file's hunk
+		adding
+		updating
+	)
+	mode, started, expectMove := outside, false, false
+
+lines:
+	for _, line := range strings.Split(patch, "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		if !started {
+			started = strings.TrimSpace(line) == patchBeginMarker
+			continue
+		}
+		// Codex trims a header line on both sides, except inside an update hunk,
+		// where leading whitespace marks a context line.
+		header := strings.TrimSpace(line)
+		if mode == updating {
+			header = strings.TrimRightFunc(line, unicode.IsSpace)
+		}
+		atMove := expectMove
+		expectMove = false
+
+		switch {
+		case header == patchEndMarker:
+			break lines
+		case strings.HasPrefix(header, patchAddMarker):
+			files = append(files, patchedFile{path: strings.TrimPrefix(header, patchAddMarker)})
+			mode = adding
+		case strings.HasPrefix(header, patchDeleteMarker):
+			mode = outside
+		case strings.HasPrefix(header, patchUpdateMarker):
+			files = append(files, patchedFile{path: strings.TrimPrefix(header, patchUpdateMarker)})
+			mode, expectMove = updating, true
+		case atMove && strings.HasPrefix(header, patchMoveToMarker):
+			files[len(files)-1].path = strings.TrimPrefix(header, patchMoveToMarker)
+		case mode != outside && strings.HasPrefix(line, "+"):
+			last := &files[len(files)-1]
+			last.added = append(last.added, line[1:])
+		}
+	}
+
+	edits := make([]fileEdit, len(files))
+	for i, f := range files {
+		edits[i] = fileEdit{path: f.path, introduced: strings.Join(f.added, "\n")}
+	}
+	return edits
 }
 
 // projectRootFor returns the nearest ancestor of file that carries a build

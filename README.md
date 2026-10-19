@@ -39,7 +39,7 @@ the Go sources, and the shared test fixtures alongside each other:
 │   ├── vaadin-check-aura-usage/SKILL.md
 │   ├── vaadin-check-theme-mixing/SKILL.md
 │   └── vaadin-create-project/SKILL.md
-├── hooks/                  # Claude Code hooks shipped by the plugin
+├── hooks/                  # Claude Code / Codex hooks shipped by the plugin
 │   └── hooks.json          # PostToolUse: styling checks after styling edits
 ├── go/                      # the CLI implementation (source of the binaries)
 │   ├── main.go  build.sh  go.mod
@@ -245,24 +245,26 @@ that false-positive trap.
 
 ## Hooks
 
-The plugin ships one Claude Code hook, wired up in
-[`hooks/hooks.json`](hooks/hooks.json) and referenced from the plugin manifest.
+The plugin ships one hook for Claude Code and Codex, wired up in
+[`hooks/hooks.json`](hooks/hooks.json), which both load from the plugin root by
+default.
 
-**PostToolUse → styling checks.** After the agent edits a file (`Edit`, `Write`,
-or `MultiEdit`), the hook runs the styling checks — `check-theme-mixing` and
-`check-aura-usage` — and, only when one of them finds an error-level problem,
-feeds the findings back to the agent so it can fix them. The scope is
-deliberately narrow so the hook stays quiet — it speaks only when **all three**
-gates pass:
+**PostToolUse → styling checks.** After the agent edits files (`Edit`, `Write`,
+or `MultiEdit` in Claude Code, `apply_patch` in Codex), the hook runs the
+styling checks — `check-theme-mixing` and `check-aura-usage` — and, only when
+one of them finds an error-level problem, feeds the findings back to the agent
+so it can fix them. The scope is deliberately narrow so the hook stays quiet — it
+speaks only when **all three** gates pass:
 
-1. The edited file is `.css` or `.java` (anything else is ignored).
+1. An edited file is `.css` or `.java` (anything else is ignored).
 2. For `.java`, the text the edit *introduced* mentions a Vaadin styling API
    (`getStyle(`, `*ClassName(s)`, `@CssImport` / `@StyleSheet` / `@Theme`,
    `LumoUtility`, `--lumo-` / `--aura-`, `*ThemeName(s)`, `getThemeList(`). Any
    `.css` edit qualifies.
-3. A check reports an error-level finding for the edited file's project. Clean
+3. A check reports an error-level finding for that file's project. Clean
    projects, warnings, and indeterminate results produce no output, and the edit
-   is never blocked.
+   is never blocked. A Codex patch can touch several projects. Each one is
+   checked once, and its findings are labelled with its directory.
 
 The hook logic lives in the native binary (`vaadin-agent-tools hook
 post-tool-use`, reading the PostToolUse event on stdin), so it runs identically
@@ -274,10 +276,31 @@ selector through `${CLAUDE_PLUGIN_ROOT}`, the plugin's install directory:
 "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/vaadin-agent-tools\" hook post-tool-use"
 ```
 
+Codex loads the same `hooks/hooks.json` from the plugin root and sets
+`CLAUDE_PLUGIN_ROOT` for compatibility, so the command needs no changes. Codex
+has no field that names a hook, so its `/hooks` browser uses the handler's
+`statusMessage` as the title (Codex 0.162 and later; older releases show
+`Hook 1`). Claude Code shows the same text as the spinner while the hook runs.
+
+Codex makes edits through `apply_patch`. Its `Edit` / `Write` matcher aliases
+fire this hook, but the payload carries the whole patch in `tool_input.command`
+instead of a `file_path`. The hook reads that patch the way Codex does. Each
+added or updated file counts as edited, and a moved file counts at its new path.
+A deleted file is skipped. The file's `+` lines are the text the edit
+introduced. Relative paths in the patch resolve against the payload's `cwd`.
+
 You can test it by hand:
 
 ```shell
 echo '{"tool_input":{"file_path":"/abs/path/App.java","new_string":"btn.getStyle().set(\"color\",\"red\");"}}' \
+  | bin/vaadin-agent-tools hook post-tool-use
+```
+
+Or with a Codex `apply_patch` payload (`printf '%s'` keeps the `\n` escapes for
+the JSON parser, where some shells' `echo` would expand them):
+
+```shell
+printf '%s' '{"cwd":"/abs/path/my-app","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: src/main/java/com/example/App.java\n@@\n+btn.getStyle().set(\"color\",\"red\");\n*** End Patch"}}' \
   | bin/vaadin-agent-tools hook post-tool-use
 ```
 
