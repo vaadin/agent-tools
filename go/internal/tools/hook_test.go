@@ -1,8 +1,10 @@
 package tools
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -158,5 +160,174 @@ func TestHookEnvelopeMatchesToolJSON(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("envelope is missing %q, got: %q", want, out)
 		}
+	}
+}
+
+// runPatchHook feeds a Codex apply_patch PostToolUse payload to the hook. The
+// patch's relative paths resolve against cwd, the fixtures directory, which the
+// payload names; the hook process itself starts somewhere unrelated, so the test
+// also proves the payload's cwd is the one used. Each listed fixture gets a build
+// descriptor, as in runHook.
+func runPatchHook(t *testing.T, patch string, fixtures ...string) string {
+	t.Helper()
+	for _, fixture := range fixtures {
+		pom := filepath.Join(fixturesDir(t), fixture, "pom.xml")
+		if err := os.WriteFile(pom, []byte("<project/>"), 0o644); err != nil {
+			t.Fatalf("write pom: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Remove(pom) })
+	}
+	payload, err := json.Marshal(map[string]any{
+		"hook_event_name": "PostToolUse",
+		"cwd":             fixturesDir(t),
+		"tool_name":       "apply_patch",
+		"tool_input":      map[string]string{"command": patch},
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	var out strings.Builder
+	if code := RunHook([]string{"post-tool-use"}, strings.NewReader(string(payload)), &out, t.TempDir()); code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	return out.String()
+}
+
+func TestHookFlagsAuraMisuseAfterCodexCSSPatch(t *testing.T) {
+	out := runPatchHook(t, `*** Begin Patch
+*** Update File: aura-readonly/frontend/themes/my-theme/styles.css
+@@ html {
++  --aura-background-color: #fff;
+*** End Patch`, "aura-readonly")
+	if !strings.Contains(out, "AURA_READONLY_PROPERTY_ASSIGNED") {
+		t.Fatalf("expected the Aura usage check to run after a Codex CSS patch, got: %q", out)
+	}
+	if strings.Contains(out, "Project: ") {
+		t.Fatalf("a single-project patch should not label its sections, got: %q", out)
+	}
+}
+
+func TestHookFlagsStylingAfterCodexJavaPatch(t *testing.T) {
+	out := runPatchHook(t, `*** Begin Patch
+*** Update File: mixed/src/main/java/com/example/Application.java
+@@ public class Application {
++    void style(Button btn) { btn.getStyle().set("color", "red"); }
+*** End Patch`, "mixed")
+	if !strings.Contains(out, "MULTIPLE_BASE_THEMES") {
+		t.Fatalf("expected mixing finding after a Codex styling patch, got: %q", out)
+	}
+}
+
+// Only the lines a patch adds count as what it introduced. Styling code that is
+// merely context, or that the patch removes, must not wake the hook.
+func TestHookSilentOnCodexNonStylingJavaPatch(t *testing.T) {
+	out := runPatchHook(t, `*** Begin Patch
+*** Update File: mixed/src/main/java/com/example/Application.java
+@@ public class Application {
+     btn.getStyle().set("color", "red");
+-    btn.addClassName("primary");
++    int total = a + b;
+*** End Patch`, "mixed")
+	if out != "" {
+		t.Fatalf("expected silence for a non-styling Codex patch, got: %q", out)
+	}
+}
+
+// One patch can edit files in different projects: each project is checked once
+// and its findings are labelled with the project they belong to. The second path
+// is absolute, which apply_patch also accepts.
+func TestHookChecksEveryProjectACodexPatchTouches(t *testing.T) {
+	css := filepath.Join(fixturesDir(t), "aura-readonly", "frontend", "themes", "my-theme", "styles.css")
+	out := runPatchHook(t, `*** Begin Patch
+*** Update File: mixed/src/main/java/com/example/Application.java
+@@
++    btn.addClassName("primary");
+*** Update File: mixed/src/main/java/com/example/Application.java
+@@
++    int total = a + b;
+*** Update File: `+css+`
+@@
++  --aura-background-color: #fff;
+*** End Patch`, "mixed", "aura-readonly")
+	for _, want := range []string{
+		"MULTIPLE_BASE_THEMES",
+		"AURA_READONLY_PROPERTY_ASSIGNED",
+		"Project: " + filepath.Join(fixturesDir(t), "mixed"),
+		"Project: " + filepath.Join(fixturesDir(t), "aura-readonly"),
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in the output, got: %q", want, out)
+		}
+	}
+	if n := strings.Count(out, "Project: "+filepath.Join(fixturesDir(t), "mixed")); n != 1 {
+		t.Fatalf("expected the mixed project to be checked once, got %d sections: %q", n, out)
+	}
+}
+
+// Deleting a stylesheet introduces no styling, even in a project that has
+// error-level findings.
+func TestHookSilentOnCodexDeleteOnlyPatch(t *testing.T) {
+	out := runPatchHook(t, `*** Begin Patch
+*** Delete File: aura-readonly/frontend/themes/my-theme/styles.css
+*** End Patch`, "aura-readonly")
+	if out != "" {
+		t.Fatalf("expected silence for a delete-only Codex patch, got: %q", out)
+	}
+}
+
+func TestParseApplyPatch(t *testing.T) {
+	tests := []struct {
+		name  string
+		patch string
+		want  []fileEdit
+	}{
+		{
+			name:  "added file",
+			patch: "*** Begin Patch\n*** Add File: a/styles.css\n+html {\n+  color: red;\n+}\n*** End Patch",
+			want:  []fileEdit{{path: "a/styles.css", introduced: "html {\n  color: red;\n}"}},
+		},
+		{
+			name:  "update keeps only added lines",
+			patch: "*** Begin Patch\n*** Update File: A.java\n@@ class A {\n ctx();\n-old();\n+fresh();\n*** End of File\n*** End Patch",
+			want:  []fileEdit{{path: "A.java", introduced: "fresh();"}},
+		},
+		{
+			name:  "move reports the new path",
+			patch: "*** Begin Patch\n*** Update File: old.txt\n*** Move to: new.css\n@@\n+x\n*** End Patch",
+			want:  []fileEdit{{path: "new.css", introduced: "x"}},
+		},
+		{
+			name:  "late move marker is ignored",
+			patch: "*** Begin Patch\n*** Update File: a.txt\n@@\n+x\n*** Move to: b.css\n*** End Patch",
+			want:  []fileEdit{{path: "a.txt", introduced: "x"}},
+		},
+		{
+			name:  "deleted file is left out",
+			patch: "*** Begin Patch\n*** Delete File: gone.css\n*** Add File: kept.css\n+a\n*** End Patch",
+			want:  []fileEdit{{path: "kept.css", introduced: "a"}},
+		},
+		{
+			name:  "heredoc wrapper, padded markers and CRLF",
+			patch: "<<'EOF'\r\n  *** Begin Patch \r\n *** Add File: a.css\r\n+b\r\n*** End Patch\r\nEOF\r\n",
+			want:  []fileEdit{{path: "a.css", introduced: "b"}},
+		},
+		{
+			name:  "nothing after the end marker",
+			patch: "*** Begin Patch\n*** Add File: a.css\n+b\n*** End Patch\n*** Add File: c.css\n+d",
+			want:  []fileEdit{{path: "a.css", introduced: "b"}},
+		},
+		{
+			name:  "not a patch",
+			patch: "mvn package",
+			want:  []fileEdit{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseApplyPatch(tt.patch); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("parseApplyPatch() = %#v, want %#v", got, tt.want)
+			}
+		})
 	}
 }
