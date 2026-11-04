@@ -36,6 +36,8 @@
       "Check this project's CSS for Aura theme misuse.",
       "Create a new Vaadin project in ./my-app."
     ],
-    "brandColor": "#056FF0"
+    "brandColor": "#056FF0",
+    "composerIcon": "./assets/vaadin-icon.svg",
+    "logo": "./assets/vaadin-icon.svg"
   }
 }
